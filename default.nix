@@ -1,9 +1,9 @@
 {
   system ? builtins.currentSystem,
   nixpkgs ? <nixpkgs>,
+  pkgs ? import nixpkgs {}
   }:
 let
-  pkgs = import nixpkgs { };
   lib = import ./lib { inherit pkgs; }; # functions
 
   bcachefs-tools = pkgs.callPackage ./pkgs/bcachefs-tools { };
