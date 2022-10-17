@@ -24,6 +24,10 @@ let
         url = "https://evilpiepirate.org/git/bcachefs.git/rawdiff/?id=${commit}&id2=v${lib.versions.majorMinor kernelVersion}";
         sha256 = diffHash;
       };
-      extraConfig = "BCACHEFS_FS y";
+      extraConfig = ''
+        BCACHEFS_FS y
+        BCACHEFS_POSIX_ACL y
+        BCACHEFS_QUOTA y
+      '';
   }] ++ oldPatches;
 }))

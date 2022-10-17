@@ -25,17 +25,18 @@ let
         patch = ./pkgs/bcachefs-kernel/yo.patch; }
     ];
   };
+  overlay = (super: final: { inherit bcachefs-tools bcachefs-master bcachefs-yo-testing; });
 in
 {
   inherit bcachefs-tools bcachefs-master bcachefs-yo-testing lib;
   # The `lib`, `modules`, and `overlay` names are special
   modules = import ./modules; # NixOS modules
-  overlays = import ./overlays; # nixpkgs overlays
+  overlays = [overlay]; # nixpkgs overlays
   bcachefs-iso = (import "${toString nixpkgs}/nixos/lib/eval-config.nix" {
       inherit system;
       modules = [
         ({...}: {
-          nixpkgs.overlays = [(super: final: { inherit bcachefs-tools bcachefs-master;})];
+          nixpkgs.overlays = [ overlay ];
         })
         (
           ./iso.nix
