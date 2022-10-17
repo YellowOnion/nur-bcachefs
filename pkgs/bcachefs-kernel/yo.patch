@@ -1,0 +1,75 @@
+diff --git a/fs/bcachefs/checksum.c b/fs/bcachefs/checksum.c
+index b5850a761b91..5e9d3c1fe84f 100644
+--- a/fs/bcachefs/checksum.c
++++ b/fs/bcachefs/checksum.c
+@@ -391,12 +391,11 @@ int bch2_rechecksum_bio(struct bch_fs *c, struct bio *bio,
+ 	struct crc_split {
+ 		struct bch_extent_crc_unpacked	*crc;
+ 		unsigned			len;
+-		unsigned			csum_type;
+ 		struct bch_csum			csum;
+ 	} splits[3] = {
+-		{ crc_a, len_a, new_csum_type },
+-		{ crc_b, len_b, new_csum_type },
+-		{ NULL,	 bio_sectors(bio) - len_a - len_b, new_csum_type },
++		{ crc_a, len_a },
++		{ crc_b, len_b },
++		{ NULL,	 bio_sectors(bio) - len_a - len_b },
+ 	}, *i;
+ 	bool mergeable = crc_old.csum_type == new_csum_type &&
+ 		bch2_checksum_mergeable(new_csum_type);
+@@ -411,7 +410,7 @@ int bch2_rechecksum_bio(struct bch_fs *c, struct bio *bio,
+ 	for (i = splits; i < splits + ARRAY_SIZE(splits); i++) {
+ 		iter.bi_size = i->len << 9;
+ 		if (mergeable || i->crc)
+-			i->csum = __bch2_checksum_bio(c, i->csum_type,
++			i->csum = __bch2_checksum_bio(c, new_csum_type,
+ 						      nonce, bio, &iter);
+ 		else
+ 			bio_advance_iter(bio, &iter, i->len << 9);
+@@ -441,7 +440,7 @@ int bch2_rechecksum_bio(struct bch_fs *c, struct bio *bio,
+ 	for (i = splits; i < splits + ARRAY_SIZE(splits); i++) {
+ 		if (i->crc)
+ 			*i->crc = (struct bch_extent_crc_unpacked) {
+-				.csum_type		= i->csum_type,
++				.csum_type		= new_csum_type,
+ 				.compression_type	= crc_old.compression_type,
+ 				.compressed_size	= i->len,
+ 				.uncompressed_size	= i->len,
+diff --git a/fs/bcachefs/io.c b/fs/bcachefs/io.c
+index 558d0c232816..c7281254b36b 100644
+--- a/fs/bcachefs/io.c
++++ b/fs/bcachefs/io.c
+@@ -926,8 +926,7 @@ static int bch2_write_extent(struct bch_write_op *op, struct write_point *wp,
+ 	saved_iter = dst->bi_iter;
+ 
+ 	do {
+-		struct bch_extent_crc_unpacked crc =
+-			(struct bch_extent_crc_unpacked) { 0 };
++		struct bch_extent_crc_unpacked crc = { 0 };
+ 		struct bversion version = op->version;
+ 		size_t dst_len, src_len;
+ 
+@@ -979,6 +978,8 @@ static int bch2_write_extent(struct bch_write_op *op, struct write_point *wp,
+ 		    !crc_is_compressed(crc) &&
+ 		    bch2_csum_type_is_encryption(op->crc.csum_type) ==
+ 		    bch2_csum_type_is_encryption(op->csum_type)) {
++			u8 compression_type = crc.compression_type;
++			u16 nouce = crc.nonce;
+ 			/*
+ 			 * Note: when we're using rechecksum(), we need to be
+ 			 * checksumming @src because it has all the data our
+@@ -997,6 +998,13 @@ static int bch2_write_extent(struct bch_write_op *op, struct write_point *wp,
+ 					bio_sectors(src) - (src_len >> 9),
+ 					op->csum_type))
+ 				goto csum_err;
++			/*
++			 * rchecksum_bio sets compression_type on crc from op->crc,
++			 * this isn't always correct as sometimes we're changing
++			 * an extent from uncompressed to incompressible.
++			 */
++			crc.compression_type = compression_type;
++			crc.nonce = nouce;
+ 		} else {
+ 			if ((op->flags & BCH_WRITE_DATA_ENCODED) &&
+ 			    bch2_rechecksum_bio(c, src, version, op->crc,

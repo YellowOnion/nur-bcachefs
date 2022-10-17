@@ -1,10 +1,10 @@
-{ lib, fetchurl, kernel, kernelPatches, ...} @ args:
+{ lib, fetchurl, kernel, kernelPatches, version, ...} @ args:
 
 with lib;
 
 let
-  commit = "1194fb84803e3cd442d0872c396720d50b4fcd81";
-  diffHash = "1knj6v603vjanmnkilbbacc5lz4sfygcgnc9qqxp5g1cds35q3ks";
+  commit = "8ae9f3af830a0cd8aed7de278f6021974720119b";
+  diffHash = "1bdvr90ldgrifawikra05gcgdhr54jiljv4pn1ib86qyhxlrhfvw";
   shorthash = lib.strings.substring 0 7 commit;
   kernelVersion = kernel.version;
   oldPatches = kernelPatches;
@@ -12,7 +12,7 @@ let
 (kernel.override (args // {
   argsOverride = {
 
-  version = "${kernelVersion}-bcachefs-unstable-${shorthash}";
+    version = "${kernelVersion}-bcachefs-${version}-${shorthash}";
   extraMeta.branch = versions.majorMinor kernelVersion;
 
   } // (args.argsOverride or { });
