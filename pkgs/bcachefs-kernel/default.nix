@@ -25,6 +25,7 @@ let
         sha256 = diffHash;
       };
       extraConfig = ''
+        CRYPTO_CRC32C_INTEL y
         BCACHEFS_FS y
         BCACHEFS_POSIX_ACL y
         BCACHEFS_QUOTA y
