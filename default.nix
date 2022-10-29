@@ -25,6 +25,19 @@ let
         patch = ./pkgs/bcachefs-kernel/yo.patch; }
     ];
   };
+  makeISO = system: (import "${toString nixpkgs}/nixos/lib/eval-config.nix" {
+      inherit system;
+      modules = [
+        ({...}: {
+          nixpkgs.overlays = [ overlay ];
+          nixpkgs.crossSystem = { inherit system; };
+        })
+        (
+          ./iso.nix
+        )
+      ];
+  }).config.system.build.isoImage;
+
   overlay = (super: final: { inherit bcachefs-tools bcachefs-master bcachefs-yo-testing; });
 in
 {
@@ -32,15 +45,6 @@ in
   # The `lib`, `modules`, and `overlay` names are special
   modules = import ./modules; # NixOS modules
   overlays = [overlay]; # nixpkgs overlays
-  bcachefs-iso = (import "${toString nixpkgs}/nixos/lib/eval-config.nix" {
-      inherit system;
-      modules = [
-        ({...}: {
-          nixpkgs.overlays = [ overlay ];
-        })
-        (
-          ./iso.nix
-        )
-      ];
-  }).config.system.build.isoImage;
+  bcachefs-x86_64-iso = makeISO "x86_64-linux";
+  bcachefs-aarch64-iso = makeISO "aarch64-linux";
 }
