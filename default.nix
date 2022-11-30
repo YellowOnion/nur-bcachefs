@@ -17,6 +17,10 @@ let
   });
 
   bcachefs-tools = pkgs.callPackage ./pkgs/bcachefs-tools { };
+  bcachefs-tools-woob = (import (pkgs.fetchgit {
+    inherit (pkgs.lib.importJSON ./woob-tools-version.json)
+      url rev sha256;
+  })).outputs.packages.x86_64-linux.default;
   bcachefs-kernel-kent = mkKernel "kent-master" false [];
   bcachefs-kernel-kent-debug = mkKernel "kent-master" true [];
   bcachefs-kernel-woob = mkKernel "woob-testing" false [
@@ -36,6 +40,7 @@ in
 {
   inherit
     bcachefs-tools
+    bcachefs-tools-woob
     bcachefs-kernel-kent
     bcachefs-kernel-kent-debug
     bcachefs-kernel-woob

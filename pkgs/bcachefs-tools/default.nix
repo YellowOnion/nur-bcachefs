@@ -30,6 +30,7 @@ stdenv.mkDerivation {
   src = fetchFromGitHub {inherit (info) owner repo rev sha256;};
 
   postPatch = ''
+    patchShebangs .
     substituteInPlace Makefile \
       --replace "pytest-3" "pytest --verbose" \
       --replace "INITRAMFS_DIR=/etc/initramfs-tools" \

@@ -1,0 +1,11 @@
+{
+  "url": "https://github.com/YellowOnion/bcachefs-tools.git",
+  "rev": "9676253eb90150fea37cbffe2c4f13f9df328c5e",
+  "date": "2022-11-30T14:12:27+13:00",
+  "path": "/nix/store/60jpyb2y78w5myc0br041swyw7dmnzj6-bcachefs-tools",
+  "sha256": "15s5j8lmmpz1zkx7d593bj4pl93smgcw0kb0ci0mgamjv6jhb0a9",
+  "fetchLFS": false,
+  "fetchSubmodules": false,
+  "deepClone": false,
+  "leaveDotGit": false
+}
