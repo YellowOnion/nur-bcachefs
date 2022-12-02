@@ -1,4 +1,4 @@
-From bae6b322de947eaea3d75778df151b861a77aedf Mon Sep 17 00:00:00 2001
+From 080b61b291c690cfd904c940d798db3680bdde31 Mon Sep 17 00:00:00 2001
 From: Daniel Hill <daniel@gluo.nz>
 Date: Wed, 19 Oct 2022 17:39:03 +1300
 Subject: [PATCH 1/3] bcachefs: data_update_init() no longer degrades when
@@ -48,7 +48,7 @@ index 3edd7b779f6e..8765f2ec03d2 100644
 2.38.1
 
 
-From 910bf35f1953914db2a374c72456076d939d61ec Mon Sep 17 00:00:00 2001
+From 7b1359cdc9f706dc04a4e4cf682e22dd25420488 Mon Sep 17 00:00:00 2001
 From: Daniel Hill <daniel@gluo.nz>
 Date: Thu, 17 Nov 2022 13:27:19 +1300
 Subject: [PATCH 2/3] bcachefs: move btree_trans_stats()
@@ -97,7 +97,7 @@ index fb237c95ee13..60adc042c96c 100644
 2.38.1
 
 
-From e1b23f476ab60aa417008c81e1cb62f6d60424b6 Mon Sep 17 00:00:00 2001
+From eefe5ce396fb6e61fe54309f4f08a92143857d64 Mon Sep 17 00:00:00 2001
 From: Daniel Hill <daniel@gluo.nz>
 Date: Mon, 14 Nov 2022 14:27:27 +1300
 Subject: [PATCH 3/3] bcachefs: add per transaction counters
@@ -110,10 +110,10 @@ of internals and performance optimization.
 Signed-off-by: Daniel Hill <daniel@gluo.nz>
 
 diff --git a/fs/bcachefs/alloc_background.c b/fs/bcachefs/alloc_background.c
-index 702d6ec55a93..f22a1b41c01f 100644
+index d9bc2d0f844a..10ca491f0532 100644
 --- a/fs/bcachefs/alloc_background.c
 +++ b/fs/bcachefs/alloc_background.c
-@@ -1255,7 +1255,7 @@ static int invalidate_one_bucket(struct btree_trans *trans,
+@@ -1435,7 +1435,7 @@ static int invalidate_one_bucket(struct btree_trans *trans,
  	if (ret)
  		goto out;
  
@@ -230,10 +230,10 @@ index 055987a2a6a6..18525ff90a3a 100644
  	for_each_member_device(ca, c, i) {
  		kvfree(ca->oldest_gen);
 diff --git a/fs/bcachefs/btree_iter.c b/fs/bcachefs/btree_iter.c
-index e0cd6c5ef308..30cceb61a166 100644
+index 0d280e60e1e3..eaf1c2871fb3 100644
 --- a/fs/bcachefs/btree_iter.c
 +++ b/fs/bcachefs/btree_iter.c
-@@ -1004,7 +1004,7 @@ static int bch2_btree_path_traverse_all(struct btree_trans *trans)
+@@ -1034,7 +1034,7 @@ static int bch2_btree_path_traverse_all(struct btree_trans *trans)
  
  	trans->in_traverse_all = false;
  
@@ -242,7 +242,7 @@ index e0cd6c5ef308..30cceb61a166 100644
  	return ret;
  }
  
-@@ -1160,7 +1160,7 @@ int __must_check bch2_btree_path_traverse(struct btree_trans *trans,
+@@ -1190,7 +1190,7 @@ int __must_check bch2_btree_path_traverse(struct btree_trans *trans,
  		u64 mask = ~(~0ULL << restart_probability_bits);
  
  		if ((prandom_u32() & mask) == mask) {
@@ -251,7 +251,7 @@ index e0cd6c5ef308..30cceb61a166 100644
  			return btree_trans_restart(trans, BCH_ERR_transaction_restart_fault_inject);
  		}
  	}
-@@ -1677,7 +1677,7 @@ struct btree *bch2_btree_iter_next_node(struct btree_iter *iter)
+@@ -1707,7 +1707,7 @@ struct btree *bch2_btree_iter_next_node(struct btree_iter *iter)
  		path->l[path->level].b		= ERR_PTR(-BCH_ERR_no_btree_node_relock);
  		path->l[path->level + 1].b	= ERR_PTR(-BCH_ERR_no_btree_node_relock);
  		btree_path_set_dirty(path, BTREE_ITER_NEED_TRAVERSE);
@@ -260,7 +260,7 @@ index e0cd6c5ef308..30cceb61a166 100644
  		ret = btree_trans_restart(trans, BCH_ERR_transaction_restart_relock);
  		goto err;
  	}
-@@ -2740,7 +2740,7 @@ void *__bch2_trans_kmalloc(struct btree_trans *trans, size_t size)
+@@ -2757,7 +2757,7 @@ void *__bch2_trans_kmalloc(struct btree_trans *trans, size_t size)
  	trans->mem_bytes = new_bytes;
  
  	if (old_bytes) {
@@ -270,7 +270,7 @@ index e0cd6c5ef308..30cceb61a166 100644
  	}
  
 diff --git a/fs/bcachefs/btree_iter.h b/fs/bcachefs/btree_iter.h
-index c630ab56a875..850f7076f4f4 100644
+index 2f13be60b245..a09fe8f36ead 100644
 --- a/fs/bcachefs/btree_iter.h
 +++ b/fs/bcachefs/btree_iter.h
 @@ -537,7 +537,7 @@ static inline struct bkey_s_c bch2_btree_iter_peek_upto_type(struct btree_iter *
@@ -470,10 +470,10 @@ index a4476f1662ea..bc58b363ec87 100644
  	if (parent) {
  		bch2_keylist_add(&as->parent_keys, &n->key);
 diff --git a/fs/bcachefs/btree_update_leaf.c b/fs/bcachefs/btree_update_leaf.c
-index cd23d7df9f75..d272f57b4715 100644
+index 154a819b77ec..2044530291ed 100644
 --- a/fs/bcachefs/btree_update_leaf.c
 +++ b/fs/bcachefs/btree_update_leaf.c
-@@ -284,7 +284,7 @@ bch2_trans_journal_preres_get_cold(struct btree_trans *trans, unsigned u64s,
+@@ -306,7 +306,7 @@ bch2_trans_journal_preres_get_cold(struct btree_trans *trans, unsigned u64s,
  
  	ret = bch2_trans_relock(trans);
  	if (ret) {
@@ -482,7 +482,7 @@ index cd23d7df9f75..d272f57b4715 100644
  		return ret;
  	}
  
-@@ -562,7 +562,7 @@ bch2_trans_commit_write_locked(struct btree_trans *trans,
+@@ -593,7 +593,7 @@ bch2_trans_commit_write_locked(struct btree_trans *trans,
  	int ret;
  
  	if (race_fault()) {
@@ -491,7 +491,7 @@ index cd23d7df9f75..d272f57b4715 100644
  		return btree_trans_restart_nounlock(trans, BCH_ERR_transaction_restart_fault_inject);
  	}
  
-@@ -733,7 +733,7 @@ static noinline int trans_lock_write_fail(struct btree_trans *trans, struct btre
+@@ -739,7 +739,7 @@ static noinline int trans_lock_write_fail(struct btree_trans *trans, struct btre
  		bch2_btree_node_unlock_write(trans, i->path, insert_l(i)->b);
  	}
  
@@ -500,7 +500,7 @@ index cd23d7df9f75..d272f57b4715 100644
  	return btree_trans_restart(trans, BCH_ERR_transaction_restart_would_deadlock_write);
  }
  
-@@ -897,7 +897,7 @@ int bch2_trans_commit_error(struct btree_trans *trans,
+@@ -903,7 +903,7 @@ int bch2_trans_commit_error(struct btree_trans *trans,
  	case BTREE_INSERT_BTREE_NODE_FULL:
  		ret = bch2_btree_split_leaf(trans, i->path, trans->flags);
  		if (bch2_err_matches(ret, BCH_ERR_transaction_restart))
@@ -509,7 +509,7 @@ index cd23d7df9f75..d272f57b4715 100644
  		break;
  	case BTREE_INSERT_NEED_MARK_REPLICAS:
  		bch2_trans_unlock(trans);
-@@ -908,7 +908,7 @@ int bch2_trans_commit_error(struct btree_trans *trans,
+@@ -914,7 +914,7 @@ int bch2_trans_commit_error(struct btree_trans *trans,
  
  		ret = bch2_trans_relock(trans);
  		if (ret)
@@ -518,7 +518,7 @@ index cd23d7df9f75..d272f57b4715 100644
  		break;
  	case BTREE_INSERT_NEED_JOURNAL_RES:
  		bch2_trans_unlock(trans);
-@@ -925,12 +925,12 @@ int bch2_trans_commit_error(struct btree_trans *trans,
+@@ -931,12 +931,12 @@ int bch2_trans_commit_error(struct btree_trans *trans,
  
  		ret = bch2_trans_relock(trans);
  		if (ret)
@@ -533,7 +533,7 @@ index cd23d7df9f75..d272f57b4715 100644
  
  		wait_event_freezable(c->journal.reclaim_wait,
  				     (ret = journal_reclaim_wait_done(c)));
-@@ -939,7 +939,7 @@ int bch2_trans_commit_error(struct btree_trans *trans,
+@@ -945,7 +945,7 @@ int bch2_trans_commit_error(struct btree_trans *trans,
  
  		ret = bch2_trans_relock(trans);
  		if (ret)
@@ -542,7 +542,7 @@ index cd23d7df9f75..d272f57b4715 100644
  		break;
  	default:
  		BUG_ON(ret >= 0);
-@@ -1081,7 +1081,7 @@ int __bch2_trans_commit(struct btree_trans *trans)
+@@ -1087,7 +1087,7 @@ int __bch2_trans_commit(struct btree_trans *trans)
  	if (ret)
  		goto err;
  
@@ -551,7 +551,7 @@ index cd23d7df9f75..d272f57b4715 100644
  out:
  	bch2_journal_preres_put(&c->journal, &trans->journal_preres);
  
-@@ -1563,7 +1563,7 @@ int __must_check bch2_trans_update(struct btree_trans *trans, struct btree_iter
+@@ -1569,7 +1569,7 @@ int __must_check bch2_trans_update(struct btree_trans *trans, struct btree_iter
  			ck = (void *) iter->key_cache_path->l[0].b;
  
  			if (test_bit(BKEY_CACHED_DIRTY, &ck->flags)) {
