@@ -3,8 +3,8 @@
 with lib;
 
 let
-  commit = "da437d6da4701aa94e0ce177ad440eef28edbe05";
-  diffHash = "167jrr048295d36znxvw7xyx53asaxyp29j2iab2nqgh9yla42ap";
+  commit = "de3b30303e8a52dcbf738065efb4cf183fdbf1c1";
+  diffHash = "14df05ghgpd0bci1wrgvwc5plzicqlj3xxs3ilbjjif840rsq5ay";
   shorthash = lib.strings.substring 0 7 commit;
   kernelVersion = kernel.version;
   oldPatches = kernelPatches;
