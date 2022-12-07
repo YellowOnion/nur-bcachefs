@@ -1,7 +1,7 @@
-From 080b61b291c690cfd904c940d798db3680bdde31 Mon Sep 17 00:00:00 2001
+From 17f6c0996c3c9a65148ed9136177c1c47e2c2d93 Mon Sep 17 00:00:00 2001
 From: Daniel Hill <daniel@gluo.nz>
 Date: Wed, 19 Oct 2022 17:39:03 +1300
-Subject: [PATCH 1/3] bcachefs: data_update_init() no longer degrades when
+Subject: [PATCH 1/5] bcachefs: data_update_init() no longer degrades when
  rewriting ptrs.
 
 If the underlying member provides some redundancy we need to provide
@@ -48,20 +48,20 @@ index 3edd7b779f6e..8765f2ec03d2 100644
 2.38.1
 
 
-From 7b1359cdc9f706dc04a4e4cf682e22dd25420488 Mon Sep 17 00:00:00 2001
+From 6cff38ad05b29bf5a51e31ff2e3da150a72fc47b Mon Sep 17 00:00:00 2001
 From: Daniel Hill <daniel@gluo.nz>
 Date: Thu, 17 Nov 2022 13:27:19 +1300
-Subject: [PATCH 2/3] bcachefs: move btree_trans_stats()
+Subject: [PATCH 2/5] bcachefs: move btree_trans_stats()
 
 To avoid include recursion we need to move this function to bcachefs.h
 
 Signed-off-by: Daniel Hill <daniel@gluo.nz>
 
 diff --git a/fs/bcachefs/bcachefs.h b/fs/bcachefs/bcachefs.h
-index 33341008016b..a58c75dd33b5 100644
+index 7f479cdc7069..c8670666d499 100644
 --- a/fs/bcachefs/bcachefs.h
 +++ b/fs/bcachefs/bcachefs.h
-@@ -1005,6 +1005,13 @@ static inline bool btree_id_cached(const struct bch_fs *c, enum btree_id btree)
+@@ -1006,6 +1006,13 @@ static inline bool btree_id_cached(const struct bch_fs *c, enum btree_id btree)
  	return c->btree_key_cache_btrees & (1U << btree);
  }
  
@@ -97,10 +97,10 @@ index fb237c95ee13..60adc042c96c 100644
 2.38.1
 
 
-From eefe5ce396fb6e61fe54309f4f08a92143857d64 Mon Sep 17 00:00:00 2001
+From 502fa564f26bc2550e447b274f5ff0d9bee4a08f Mon Sep 17 00:00:00 2001
 From: Daniel Hill <daniel@gluo.nz>
 Date: Mon, 14 Nov 2022 14:27:27 +1300
-Subject: [PATCH 3/3] bcachefs: add per transaction counters
+Subject: [PATCH 3/5] bcachefs: add per transaction counters
 
 Adding counters on a per transaction basis.
 
@@ -110,10 +110,10 @@ of internals and performance optimization.
 Signed-off-by: Daniel Hill <daniel@gluo.nz>
 
 diff --git a/fs/bcachefs/alloc_background.c b/fs/bcachefs/alloc_background.c
-index d9bc2d0f844a..10ca491f0532 100644
+index 39d8d31722da..728d55181acf 100644
 --- a/fs/bcachefs/alloc_background.c
 +++ b/fs/bcachefs/alloc_background.c
-@@ -1435,7 +1435,7 @@ static int invalidate_one_bucket(struct btree_trans *trans,
+@@ -1803,7 +1803,7 @@ static int invalidate_one_bucket(struct btree_trans *trans,
  	if (ret)
  		goto out;
  
@@ -140,7 +140,7 @@ index 46f215c8bced..ccd326ae6a92 100644
  				usage->d[BCH_DATA_free].buckets,
  				avail,
 diff --git a/fs/bcachefs/bcachefs.h b/fs/bcachefs/bcachefs.h
-index a58c75dd33b5..7cb1edf0a539 100644
+index c8670666d499..ce7440687368 100644
 --- a/fs/bcachefs/bcachefs.h
 +++ b/fs/bcachefs/bcachefs.h
 @@ -219,6 +219,13 @@ do {									\
@@ -157,7 +157,7 @@ index a58c75dd33b5..7cb1edf0a539 100644
  #define bch2_fs_init_fault(name)					\
  	dynamic_fault("bcachefs:bch_fs_init:" name)
  #define bch2_meta_read_fault(name)					\
-@@ -573,6 +580,7 @@ struct btree_debug {
+@@ -574,6 +581,7 @@ struct btree_debug {
  struct btree_transaction_stats {
  	struct mutex		lock;
  	struct time_stats       lock_hold_times;
@@ -230,7 +230,7 @@ index 055987a2a6a6..18525ff90a3a 100644
  	for_each_member_device(ca, c, i) {
  		kvfree(ca->oldest_gen);
 diff --git a/fs/bcachefs/btree_iter.c b/fs/bcachefs/btree_iter.c
-index 0d280e60e1e3..eaf1c2871fb3 100644
+index f9ccc216216c..f101527354f5 100644
 --- a/fs/bcachefs/btree_iter.c
 +++ b/fs/bcachefs/btree_iter.c
 @@ -1034,7 +1034,7 @@ static int bch2_btree_path_traverse_all(struct btree_trans *trans)
@@ -251,7 +251,7 @@ index 0d280e60e1e3..eaf1c2871fb3 100644
  			return btree_trans_restart(trans, BCH_ERR_transaction_restart_fault_inject);
  		}
  	}
-@@ -1707,7 +1707,7 @@ struct btree *bch2_btree_iter_next_node(struct btree_iter *iter)
+@@ -1716,7 +1716,7 @@ struct btree *bch2_btree_iter_next_node(struct btree_iter *iter)
  		path->l[path->level].b		= ERR_PTR(-BCH_ERR_no_btree_node_relock);
  		path->l[path->level + 1].b	= ERR_PTR(-BCH_ERR_no_btree_node_relock);
  		btree_path_set_dirty(path, BTREE_ITER_NEED_TRAVERSE);
@@ -260,7 +260,7 @@ index 0d280e60e1e3..eaf1c2871fb3 100644
  		ret = btree_trans_restart(trans, BCH_ERR_transaction_restart_relock);
  		goto err;
  	}
-@@ -2757,7 +2757,7 @@ void *__bch2_trans_kmalloc(struct btree_trans *trans, size_t size)
+@@ -2766,7 +2766,7 @@ void *__bch2_trans_kmalloc(struct btree_trans *trans, size_t size)
  	trans->mem_bytes = new_bytes;
  
  	if (old_bytes) {
@@ -645,6 +645,105 @@ index f0fca861b901..f5ed3acf48d8 100644
  	}
  
  	if (!rbio->pick.idx) {
+-- 
+2.38.1
+
+
+From a2e84f8a2b9471345d240b729b8bf0f55b56cfb0 Mon Sep 17 00:00:00 2001
+From: Daniel Hill <daniel@gluo.nz>
+Date: Wed, 7 Dec 2022 18:41:21 +1300
+Subject: [PATCH 4/5] bcachefs: expose nocow_lock table in sysfs
+
+Signed-off-by: Daniel Hill <daniel@gluo.nz>
+
+diff --git a/fs/bcachefs/sysfs.c b/fs/bcachefs/sysfs.c
+index 647d018b5ec9..bad3eafd32d2 100644
+--- a/fs/bcachefs/sysfs.c
++++ b/fs/bcachefs/sysfs.c
+@@ -194,6 +194,7 @@ read_attribute(btree_cache);
+ read_attribute(btree_key_cache);
+ read_attribute(stripes_heap);
+ read_attribute(open_buckets);
++read_attribute(nocow_lock_table);
+ 
+ read_attribute(internal_uuid);
+ 
+@@ -445,6 +446,22 @@ SHOW(bch2_fs)
+ 	if (attr == &sysfs_data_jobs)
+ 		data_progress_to_text(out, c);
+ 
++	if (attr == &sysfs_nocow_lock_table) {
++		int i, count = 1;
++		long last, curr = 0;
++
++		last = atomic_long_read(&c->nocow_locks.l[0].v);
++		for (i = 1; i < BUCKET_NOCOW_LOCKS; i++) {
++			curr = atomic_long_read(&c->nocow_locks.l[i].v);
++			if (last != curr) {
++				prt_printf(out, "%li: %d\n", last, count);
++				count = 1;
++				last = curr;
++			} else
++				count++;
++		}
++		prt_printf(out, "%li: %d\n", last, count);
++}
+ 	return 0;
+ }
+ 
+@@ -627,6 +644,7 @@ struct attribute *bch2_fs_internal_files[] = {
+ 	&sysfs_new_stripes,
+ 	&sysfs_stripes_heap,
+ 	&sysfs_open_buckets,
++	&sysfs_nocow_lock_table,
+ 	&sysfs_io_timers_read,
+ 	&sysfs_io_timers_write,
+ 
+-- 
+2.38.1
+
+
+From 2983c495c76814a64acd8916ce4296875ce56f13 Mon Sep 17 00:00:00 2001
+From: Daniel Hill <daniel@gluo.nz>
+Date: Wed, 7 Dec 2022 18:59:56 +1300
+Subject: [PATCH 5/5] bcachefs: add skipped_nocow to bucket_alloc_fail
+ tracepoint
+
+Signed-off-by: Daniel Hill <daniel@gluo.nz>
+
+diff --git a/include/trace/events/bcachefs.h b/include/trace/events/bcachefs.h
+index 47ba750d7937..fb3b8284c357 100644
+--- a/include/trace/events/bcachefs.h
++++ b/include/trace/events/bcachefs.h
+@@ -564,6 +564,7 @@ TRACE_EVENT(bucket_alloc_fail,
+ 		__field(u64,			need_journal_commit	)
+ 		__field(u64,			nouse			)
+ 		__field(bool,			nonblocking		)
++		__field(u64,			nocow			)
+ 		__array(char,			err,	32		)
+ 	),
+ 
+@@ -579,10 +580,11 @@ TRACE_EVENT(bucket_alloc_fail,
+ 		__entry->need_journal_commit = s->skipped_need_journal_commit;
+ 		__entry->nouse		= s->skipped_nouse;
+ 		__entry->nonblocking	= nonblocking;
++		__entry->nocow		= s->skipped_nocow;
+ 		strscpy(__entry->err, err, sizeof(__entry->err));
+ 	),
+ 
+-	TP_printk("%d,%d reserve %s free %llu avail %llu copygc_wait %llu/%lli seen %llu open %llu need_journal_commit %llu nouse %llu nonblocking %u err %s",
++	TP_printk("%d,%d reserve %s free %llu avail %llu copygc_wait %llu/%lli seen %llu open %llu need_journal_commit %llu nouse %llu nonblocking %u nocow %llu err %s",
+ 		  MAJOR(__entry->dev), MINOR(__entry->dev),
+ 		  __entry->reserve,
+ 		  __entry->free,
+@@ -594,6 +596,7 @@ TRACE_EVENT(bucket_alloc_fail,
+ 		  __entry->need_journal_commit,
+ 		  __entry->nouse,
+ 		  __entry->nonblocking,
++		  __entry->nocow,
+ 		  __entry->err)
+ );
+ 
 -- 
 2.38.1
 
