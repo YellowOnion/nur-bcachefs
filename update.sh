@@ -3,6 +3,5 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-./update-woob-tools.sh
-pkgs/bcachefs-tools/update.sh
+./update-tools.sh
 pkgs/bcachefs-kernel/update.sh

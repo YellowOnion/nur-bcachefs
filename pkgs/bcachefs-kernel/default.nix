@@ -3,8 +3,8 @@
 with lib;
 
 let
-  commit = "7a4d61ad5a36ae4f54c9ecc654a8930d806fa54f";
-  diffHash = "03dsi6frz3qphij268p4wnv8dl6m20idrlf5v4n60537daany01p";
+  commit = "b7dc4d8e7fb12e25ac2baff5bc32dd33fa3211b8";
+  diffHash = "0x0a1mlxbjd8cisjcgjjl6yqcjx0hf8wcvl9gkxh9blgcsq58qfb";
   shorthash = lib.strings.substring 0 7 commit;
   kernelVersion = kernel.version;
   oldPatches = kernelPatches;
@@ -13,6 +13,7 @@ let
   argsOverride = {
 
     version = "${kernelVersion}-bcachefs-${version}-${shorthash}";
+    modDirVersion = "${kernelVersion}-bcachefs-${shorthash}";
   extraMeta.branch = versions.majorMinor kernelVersion;
 
   } // (args.argsOverride or { });
@@ -25,6 +26,7 @@ let
         sha256 = diffHash;
       };
       extraConfig = (''
+        LOCALVERSION -bcachefs-${shorthash}
         CRYPTO_CRC32C_INTEL y
         BCACHEFS_FS y
         BCACHEFS_POSIX_ACL y
