@@ -25,8 +25,8 @@ let
   bcachefs-kernel-kent = mkKernel "kent-master" false [];
   bcachefs-kernel-kent-debug = mkKernel "kent-master" true [];
   bcachefs-kernel-woob = mkKernel "woob-testing" false [
-    { name = "woob-bcachefs-testing.patch";
-      patch = ./pkgs/bcachefs-kernel/woob.patch; }
+    { name = "promote.patch";
+      patch = ./promote.patch; }
     ];
   bcachefs-kernel-woob-debug = mkKernel "woob-testing" true [
     { name = "woob-bcachefs-testing.patch";
