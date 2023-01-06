@@ -1,0 +1,5 @@
+builds:
+ exclude:
+   - 'packages.x86_64-linux.bcachefs-iso'
+ include:
+   - 'packages.x86_64-linux.*'
