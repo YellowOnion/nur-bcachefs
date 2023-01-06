@@ -97,3 +97,10 @@ jobs:
         git commit -am 'Automated update'
         git push
       continue-on-error: true
+    - name: build iso
+      run: |
+        nix build ".#packages.x86_64-linux.bcachefs-iso" --impure
+    - name: Release
+      uses: softprops/action-gh-release@v1 continue-on-error: true
+      with:
+        files: "./result/iso/*.iso"
