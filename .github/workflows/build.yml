@@ -101,6 +101,6 @@ jobs:
       run: |
         nix build ".#packages.x86_64-linux.bcachefs-iso" --impure
     - name: Release
-      uses: softprops/action-gh-release@v1 continue-on-error: true
+      uses: softprops/action-gh-release@v1
       with:
         files: "./result/iso/*.iso"
