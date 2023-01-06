@@ -1,4 +1,4 @@
-{ debug ? false , lib, fetchurl, kernel, kernelPatches, version, ...} @ args:
+{ broken, debug ? false , lib, fetchurl, kernel, kernelPatches, version, ...} @ args:
 
 with lib;
 
@@ -11,10 +11,10 @@ let
     in
 (kernel.override (args // {
   argsOverride = {
-
     version = "${kernelVersion}-bcachefs-${version}-${shorthash}";
     modDirVersion = "${kernelVersion}-bcachefs-${shorthash}";
-  extraMeta.branch = versions.majorMinor kernelVersion;
+    extraMeta.branch = versions.majorMinor kernelVersion;
+    extraMeta.broken = broken;
 
   } // (args.argsOverride or { });
 

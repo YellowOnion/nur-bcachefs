@@ -8,7 +8,8 @@ let
   lib = import ./lib { inherit pkgs; }; # functions
 
   dotToUnderscore = pkgs.lib.strings.stringAsChars (x: if x == "." then "_" else x);
-  mkKernel = name: debug: extraPatches : (pkgs.callPackage ./pkgs/bcachefs-kernel {
+  mkKernel = broken: name: debug: extraPatches : (pkgs.callPackage ./pkgs/bcachefs-kernel {
+    broken = broken;
     debug = debug;
     kernel = pkgs.linuxKernel.kernels."linux_${dotToUnderscore kernelVersion}";
     version = name ;
@@ -22,13 +23,13 @@ let
     inherit (pkgs.lib.importJSON ./tools-version.json)
       url rev sha256;
   })).outputs.packages.x86_64-linux.default;
-  bcachefs-kernel-kent = mkKernel "kent-master" false [];
-  bcachefs-kernel-kent-debug = mkKernel "kent-master" true [];
-  bcachefs-kernel-woob = mkKernel "woob-testing" false [
-    { name = "promote.patch";
-      patch = ./promote.patch; }
+  bcachefs-kernel-kent = mkKernel false "kent-master" false [];
+  bcachefs-kernel-kent-debug = mkKernel false "kent-master" true [];
+  bcachefs-kernel-woob = mkKernel true "woob-testing" false [
+    { name = "woob-bcachefs-testing.patch";
+      patch = ./pkgs/bcachefs-kernel/woob.patch; }
     ];
-  bcachefs-kernel-woob-debug = mkKernel "woob-testing" true [
+  bcachefs-kernel-woob-debug = mkKernel true "woob-testing" true [
     { name = "woob-bcachefs-testing.patch";
       patch = ./pkgs/bcachefs-kernel/woob.patch; }
   ];
@@ -43,9 +44,9 @@ in
     bcachefs-kernel-woob-debug
     lib;
   # The `lib`, `modules`, and `overlay` names are special
-  modules = import ./modules; # NixOS modules
+  #modules = import ./modules; # NixOS modules
   overlays = [overlay]; # nixpkgs overlays
-  bcachefs-iso = (import "${toString nixpkgs}/nixos/lib/eval-config.nix" {
+  bcachefs-iso = ((import "${toString nixpkgs}/nixos/lib/eval-config.nix" {
       inherit system;
       modules = [
         ({...}: {
@@ -55,5 +56,5 @@ in
           ./iso.nix
         )
       ];
-  }).config.system.build.isoImage;
+  }).config.system.build.isoImage.overrideAttrs (self: self // { preferLocalBuild = true; }));
 }

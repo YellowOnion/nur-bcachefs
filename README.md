@@ -7,7 +7,7 @@ let
   yo-nur     = import (builtins.fetchTarball "https://github.com/YellowOnion/nur-bcachefs/archive/master.tar.gz") {};
 in
 {
-  boot.kernelPackages = lib.mkOverride 0 (pkgs.linuxPackagesFor pkgs.bcachefs-kernel);
+  boot.kernelPackages = lib.mkOverride 0 (pkgs.linuxPackagesFor pkgs.bcachefs-kernel-kent);
   nixpkgs.overlays = [(super: final: { bcachefs-tools = yo-nur.bcachefs-tools;})];
   
   nix = {
