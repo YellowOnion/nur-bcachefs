@@ -1,5 +1,7 @@
 builds:
  exclude:
-   - 'packages.x86_64-linux.bcachefs-iso'
+   - '*.*.bcachefs-iso'
+   - '*.*.lib'
+   - '*.*.overlay'
  include:
    - 'packages.x86_64-linux.*'
