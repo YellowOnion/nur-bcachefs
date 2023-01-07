@@ -25,7 +25,7 @@ let
   })).outputs.packages.x86_64-linux.default;
   bcachefs-kernel-kent = mkKernel false "kent-master" false [];
   bcachefs-kernel-kent-debug = mkKernel false "kent-master" true [];
-  bcachefs-kernel-woob = mkKernel true "woob-testing" false [
+  bcachefs-kernel-woob = mkKernel false "woob-testing" false [
     { name = "woob-bcachefs-testing.patch";
       patch = ./pkgs/bcachefs-kernel/woob.patch; }
     ];

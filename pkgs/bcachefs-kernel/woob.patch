@@ -1,173 +1,116 @@
-From 611dc4a3181d5f415792c6c914f77a2ebc95a9c0 Mon Sep 17 00:00:00 2001
+From 698223d31071d7b64c76ffc948e0fa6a6c499ddc Mon Sep 17 00:00:00 2001
 From: Daniel Hill <daniel@gluo.nz>
-Date: Tue, 13 Dec 2022 15:48:41 +1300
-Subject: [PATCH] bcachefs: nocow locks now wait on collision.
+Date: Fri, 6 Jan 2023 21:11:07 +1300
+Subject: [PATCH] bcachefs: don't block reads if we're promoting
 
-Under heavily lock congestion there's a probability all locks never
-ascend or descend to 0 due to hash collisions, preventing moves or
-updates to wait on the other indefinitely.
-
-Now we validate that the lock uniquely belongs to us before taking it,
-otherwise we wait till it's free.
+The promote path calls data_update_init() and now that we take locks here,
+there's potential for promote to block our read path, just error
+when we can't take the lock instead of blocking.
 
 Signed-off-by: Daniel Hill <daniel@gluo.nz>
+---
+ fs/bcachefs/data_update.c | 26 +++++++++++++++++---------
+ fs/bcachefs/errcode.h     |  1 +
+ fs/bcachefs/io.c          |  7 +++++++
+ 3 files changed, 25 insertions(+), 9 deletions(-)
 
+diff --git a/fs/bcachefs/data_update.c b/fs/bcachefs/data_update.c
+index e764597428c7..c1da045a091f 100644
+--- a/fs/bcachefs/data_update.c
++++ b/fs/bcachefs/data_update.c
+@@ -403,6 +403,7 @@ int bch2_data_update_init(struct btree_trans *trans,
+ 	const union bch_extent_entry *entry;
+ 	struct extent_ptr_decoded p;
+ 	unsigned i, reserve_sectors = k.k->size * data_opts.extra_replicas;
++	unsigned int ptrs_locked = 0;
+ 	int ret;
+ 
+ 	bch2_bkey_buf_init(&m->k);
+@@ -428,6 +429,8 @@ int bch2_data_update_init(struct btree_trans *trans,
+ 
+ 	i = 0;
+ 	bkey_for_each_ptr_decode(k.k, ptrs, p, entry) {
++		bool locked;
++
+ 		if (((1U << i) & m->data_opts.rewrite_ptrs) &&
+ 		    p.ptr.cached)
+ 			BUG();
+@@ -452,11 +455,7 @@ int bch2_data_update_init(struct btree_trans *trans,
+ 		if (p.crc.compression_type == BCH_COMPRESSION_TYPE_incompressible)
+ 			m->op.incompressible = true;
+ 
+-		i++;
+-
+ 		if (ctxt) {
+-			bool locked;
+-
+ 			move_ctxt_wait_event(ctxt, trans,
+ 					(locked = bch2_bucket_nocow_trylock(&c->nocow_locks,
+ 								  PTR_BUCKET_POS(c, &p.ptr), 0)) ||
+@@ -466,9 +465,14 @@ int bch2_data_update_init(struct btree_trans *trans,
+ 				bch2_bucket_nocow_lock(&c->nocow_locks,
+ 						       PTR_BUCKET_POS(c, &p.ptr), 0);
+ 		} else {
+-			bch2_bucket_nocow_lock(&c->nocow_locks,
+-					       PTR_BUCKET_POS(c, &p.ptr), 0);
++			if (!bch2_bucket_nocow_trylock(&c->nocow_locks,
++						       PTR_BUCKET_POS(c, &p.ptr), 0)) {
++				ret = -BCH_ERR_nocow_lock_blocked;
++				goto err;
++			}
+ 		}
++		ptrs_locked |= (1U << i);
++		i++;
+ 	}
+ 
+ 	if (reserve_sectors) {
+@@ -490,9 +494,13 @@ int bch2_data_update_init(struct btree_trans *trans,
+ 		return -BCH_ERR_unwritten_extent_update;
+ 	return 0;
+ err:
+-	bkey_for_each_ptr_decode(k.k, ptrs, p, entry)
+-		bch2_bucket_nocow_unlock(&c->nocow_locks,
+-				       PTR_BUCKET_POS(c, &p.ptr), 0);
++	i = 0;
++	bkey_for_each_ptr_decode(k.k, ptrs, p, entry) {
++		if ((1U << i) & ptrs_locked)
++			bch2_bucket_nocow_unlock(&c->nocow_locks,
++						PTR_BUCKET_POS(c, &p.ptr), 0);
++		i++;
++	}
+ 
+ 	bch2_bkey_buf_exit(&m->k, c);
+ 	bch2_bio_free_pages_pool(c, &m->op.wbio.bio);
+diff --git a/fs/bcachefs/errcode.h b/fs/bcachefs/errcode.h
+index 6217096494e6..b8c24f517f03 100644
+--- a/fs/bcachefs/errcode.h
++++ b/fs/bcachefs/errcode.h
+@@ -118,6 +118,7 @@
+ 	x(BCH_ERR_invalid_sb,		invalid_sb_clean)			\
+ 	x(BCH_ERR_invalid_sb,		invalid_sb_quota)			\
+ 	x(BCH_ERR_invalid,		invalid_bkey)				\
++	x(BCH_ERR_operation_blocked,    nocow_lock_blocked)			\
+ 
+ enum bch_errcode {
+ 	BCH_ERR_START		= 2048,
 diff --git a/fs/bcachefs/io.c b/fs/bcachefs/io.c
-index f0fca861b901..a4dc083b468a 100644
+index 2978ce85f8cf..430b853df628 100644
 --- a/fs/bcachefs/io.c
 +++ b/fs/bcachefs/io.c
-@@ -1406,7 +1406,7 @@ static void bch2_nocow_write(struct bch_write_op *op)
- 	struct {
- 		struct bpos	b;
- 		unsigned	gen;
--		two_state_lock_t *l;
-+		struct bucket_nocow_lock *l;
- 	} buckets[BCH_REPLICAS_MAX];
- 	unsigned nr_buckets = 0;
- 	u32 snapshot;
-@@ -1453,7 +1453,7 @@ static void bch2_nocow_write(struct bch_write_op *op)
- 			buckets[nr_buckets].b = PTR_BUCKET_POS(c, ptr);
- 			buckets[nr_buckets].gen = ptr->gen;
- 			buckets[nr_buckets].l =
--				bucket_nocow_lock(&c->nocow_locks, buckets[nr_buckets].b);
-+				bucket_nocow_lock_lookup(&c->nocow_locks, buckets[nr_buckets].b);
- 
- 			prefetch(buckets[nr_buckets].l);
- 			nr_buckets++;
-@@ -1475,11 +1475,10 @@ static void bch2_nocow_write(struct bch_write_op *op)
- 
- 		for (i = 0; i < nr_buckets; i++) {
- 			struct bch_dev *ca = bch_dev_bkey_exists(c, buckets[i].b.inode);
--			two_state_lock_t *l = buckets[i].l;
-+			struct bucket_nocow_lock *l = buckets[i].l;
- 			bool stale;
- 
--			if (!bch2_two_state_trylock(l, BUCKET_NOCOW_LOCK_UPDATE))
--				__bch2_bucket_nocow_lock(&c->nocow_locks, l, BUCKET_NOCOW_LOCK_UPDATE);
-+			bch2_bucket_nocow_lock_no_lookup(&c->nocow_locks, l, buckets[i].b, BUCKET_NOCOW_LOCK_UPDATE);
- 
- 			rcu_read_lock();
- 			stale = gen_after(*bucket_gen(ca, buckets[i].b.offset), buckets[i].gen);
-@@ -2908,7 +2907,7 @@ int bch2_fs_io_init(struct bch_fs *c)
- 	unsigned i;
- 
- 	for (i = 0; i < ARRAY_SIZE(c->nocow_locks.l); i++)
--		two_state_lock_init(&c->nocow_locks.l[i]);
-+		bch2_bucket_nocow_lock_init(&c->nocow_locks.l[i]);
- 
- 	if (bioset_init(&c->bio_read, 1, offsetof(struct bch_read_bio, bio),
- 			BIOSET_NEED_BVECS) ||
-diff --git a/fs/bcachefs/nocow_locking.h b/fs/bcachefs/nocow_locking.h
-index 2a7a9f44e88e..d983f62aee58 100644
---- a/fs/bcachefs/nocow_locking.h
-+++ b/fs/bcachefs/nocow_locking.h
-@@ -10,46 +10,79 @@
- #define BUCKET_NOCOW_LOCKS_BITS		10
- #define BUCKET_NOCOW_LOCKS		(1U << BUCKET_NOCOW_LOCKS_BITS)
- 
-+struct bucket_nocow_lock {
-+	atomic64_t bucket;
-+	two_state_lock_t lock;
-+	wait_queue_head_t wait;
-+};
-+
- struct bucket_nocow_lock_table {
--	two_state_lock_t		l[BUCKET_NOCOW_LOCKS];
-+	struct bucket_nocow_lock		l[BUCKET_NOCOW_LOCKS];
- };
- 
- #define BUCKET_NOCOW_LOCK_UPDATE	(1 << 0)
- 
--static inline two_state_lock_t *bucket_nocow_lock(struct bucket_nocow_lock_table *t,
-+static inline bool bch2_nocow_collision(struct bucket_nocow_lock *lock, u64 bucket) {
-+	u64 b = atomic64_read(&lock->bucket);
-+	return b != U64_MAX && b != bucket;
-+}
-+
-+static inline void bch2_bucket_nocow_lock_init(struct bucket_nocow_lock *lock) {
-+	init_waitqueue_head(&lock->wait);
-+	two_state_lock_init(&lock->lock);
-+}
-+
-+static inline struct bucket_nocow_lock *bucket_nocow_lock_lookup(struct bucket_nocow_lock_table *t,
- 						  struct bpos bucket)
- {
- 	u64 dev_bucket = bucket.inode << 56 | bucket.offset;
- 	unsigned h = hash_64(dev_bucket, BUCKET_NOCOW_LOCKS_BITS);
--
- 	return t->l + (h & (BUCKET_NOCOW_LOCKS - 1));
- }
- 
- static inline bool bch2_bucket_nocow_is_locked(struct bucket_nocow_lock_table *t,
- 					       struct bpos bucket)
- {
--	two_state_lock_t *l = bucket_nocow_lock(t, bucket);
-+	struct bucket_nocow_lock *l = bucket_nocow_lock_lookup(t, bucket);
- 
--	return atomic_long_read(&l->v) != 0;
-+	return atomic_long_read(&l->lock.v) != 0;
- }
- 
- static inline void bch2_bucket_nocow_unlock(struct bucket_nocow_lock_table *t,
- 					    struct bpos bucket, int flags)
- {
--	two_state_lock_t *l = bucket_nocow_lock(t, bucket);
-+	struct bucket_nocow_lock *l = bucket_nocow_lock_lookup(t, bucket);
- 
--	bch2_two_state_unlock(l, flags & BUCKET_NOCOW_LOCK_UPDATE);
-+	bch2_two_state_unlock(&l->lock, flags & BUCKET_NOCOW_LOCK_UPDATE);
-+	if (!waitqueue_active(&l->lock.wait)) {
-+		atomic64_set(&l->bucket, U64_MAX);
-+		wake_up(&l->wait);
+@@ -1961,6 +1961,13 @@ static struct promote_op *__promote_alloc(struct btree_trans *trans,
+ 				.write_flags	= BCH_WRITE_ALLOC_NOWAIT|BCH_WRITE_CACHED,
+ 			},
+ 			btree_id, k);
++	if (ret == -BCH_ERR_nocow_lock_blocked) {
++		ret = rhashtable_remove_fast(&c->promote_table, &op->hash,
++					bch_promote_params);
++		BUG_ON(ret);
++		goto err;
 +	}
- }
- 
- void __bch2_bucket_nocow_lock(struct bucket_nocow_lock_table *, two_state_lock_t *, int);
- 
-+static inline void bch2_bucket_nocow_lock_no_lookup(struct bucket_nocow_lock_table *t,
-+						    struct bucket_nocow_lock *l,
-+						    struct bpos bucket,
-+						    int flags)
-+{
 +
-+	u64 dev_bucket = bucket.inode << 56 | bucket.offset;
-+
-+	if (bch2_nocow_collision(l, dev_bucket))
-+		__wait_event(l->wait, bch2_nocow_collision(l, dev_bucket));
-+
-+	atomic64_set(&l->bucket, dev_bucket);
-+
-+	if (!bch2_two_state_trylock(&l->lock, flags & BUCKET_NOCOW_LOCK_UPDATE))
-+		__bch2_bucket_nocow_lock(t, &l->lock, flags);
-+}
- static inline void bch2_bucket_nocow_lock(struct bucket_nocow_lock_table *t,
- 					  struct bpos bucket, int flags)
- {
--	two_state_lock_t *l = bucket_nocow_lock(t, bucket);
--
--	if (!bch2_two_state_trylock(l, flags & BUCKET_NOCOW_LOCK_UPDATE))
--		__bch2_bucket_nocow_lock(t, l, flags);
-+	struct bucket_nocow_lock *l = bucket_nocow_lock_lookup(t, bucket);
-+	bch2_bucket_nocow_lock_no_lookup(t, l, bucket, flags);
- }
+ 	BUG_ON(ret);
+ 	op->write.op.end_io = promote_done;
  
- #endif /* _BCACHEFS_NOCOW_LOCKING_H */
-diff --git a/fs/bcachefs/sysfs.c b/fs/bcachefs/sysfs.c
-index bad3eafd32d2..1b954d930fe2 100644
---- a/fs/bcachefs/sysfs.c
-+++ b/fs/bcachefs/sysfs.c
-@@ -450,9 +450,9 @@ SHOW(bch2_fs)
- 		int i, count = 1;
- 		long last, curr = 0;
- 
--		last = atomic_long_read(&c->nocow_locks.l[0].v);
-+		last = atomic_long_read(&c->nocow_locks.l[0].lock.v);
- 		for (i = 1; i < BUCKET_NOCOW_LOCKS; i++) {
--			curr = atomic_long_read(&c->nocow_locks.l[i].v);
-+			curr = atomic_long_read(&c->nocow_locks.l[i].lock.v);
- 			if (last != curr) {
- 				prt_printf(out, "%li: %d\n", last, count);
- 				count = 1;
 -- 
-2.38.1
+2.37.2
 
