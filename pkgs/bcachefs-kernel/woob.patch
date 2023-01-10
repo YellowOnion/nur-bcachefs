@@ -1,7 +1,7 @@
-From 5d64cc7c22cb3a8bc2a7220c6bd63d8aa7d3c52c Mon Sep 17 00:00:00 2001
+From 2f612dd7d9140add7117b0ceaec477b2ed573994 Mon Sep 17 00:00:00 2001
 From: Daniel Hill <daniel@gluo.nz>
 Date: Mon, 9 Jan 2023 01:49:42 +1300
-Subject: [PATCH] bcachefs: add tracepoint for bch2_alloc_sectors_trans()
+Subject: [PATCH 1/2] bcachefs: add tracepoint for bch2_alloc_sectors_trans()
 
 Signed-off-by: Daniel Hill <daniel@gluo.nz>
 ---
@@ -60,7 +60,7 @@ index badf1075c9bf..de48c58a1f0e 100644
  {
  	struct bch_dev *ca = bch_dev_bkey_exists(c, ob->dev);
 diff --git a/include/trace/events/bcachefs.h b/include/trace/events/bcachefs.h
-index 44fcfe3f148a..1be382de8c4e 100644
+index 3fb658fa77ad..50dc6321e7c1 100644
 --- a/include/trace/events/bcachefs.h
 +++ b/include/trace/events/bcachefs.h
 @@ -656,6 +656,19 @@ TRACE_EVENT(bucket_invalidate,
@@ -83,6 +83,33 @@ index 44fcfe3f148a..1be382de8c4e 100644
  /* Moving IO */
  
  DEFINE_EVENT(bkey, move_extent_read,
+-- 
+2.37.2
+
+
+From e9b17f6424c89dd3dd7fb6e8edeebb9ece3194b4 Mon Sep 17 00:00:00 2001
+From: Daniel Hill <daniel@gluo.nz>
+Date: Tue, 10 Jan 2023 00:20:06 +1300
+Subject: [PATCH 2/2] bcachefs: FIX FOR PANIC IN REFLINK STUFF.
+
+Signed-off-by: Daniel Hill <daniel@gluo.nz>
+---
+ fs/bcachefs/reflink.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/bcachefs/reflink.c b/fs/bcachefs/reflink.c
+index 37ab38dd67eb..d600ee952a9b 100644
+--- a/fs/bcachefs/reflink.c
++++ b/fs/bcachefs/reflink.c
+@@ -189,7 +189,7 @@ static int bch2_make_extent_indirect(struct btree_trans *trans,
+ 
+ 	for_each_btree_key_norestart(trans, reflink_iter, BTREE_ID_reflink,
+ 			   POS(0, c->reflink_hint),
+-			   BTREE_ITER_INTENT|BTREE_ITER_SLOTS, k, ret) {
++			   BTREE_ITER_SLOTS, k, ret) {
+ 		if (reflink_iter.pos.inode) {
+ 			bch2_btree_iter_set_pos(&reflink_iter, POS_MIN);
+ 			continue;
 -- 
 2.37.2
 
