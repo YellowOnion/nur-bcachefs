@@ -3,8 +3,8 @@
 with lib;
 
 let
-  commit = "179ef7de85c0341fc33ee7b4cef227760770cfde";
-  diffHash = "1xss6kr4i61qv8azlq2xjd2pki5zalmpdki6jmhkvqi2w65iijvb";
+  commit = "70c3348bf59f5b45afb0b90d8c41aa317bc59b3d";
+  diffHash = "1as8f72zrzwjh71vdf2r5pykhp2hw4lh3m2dpy2m39gwdf4ys7x3";
   shorthash = lib.strings.substring 0 7 commit;
   kernelVersion = kernel.version;
   oldPatches = kernelPatches;
@@ -31,6 +31,9 @@ let
         BCACHEFS_FS y
         BCACHEFS_POSIX_ACL y
         BCACHEFS_QUOTA y
+        ALLOC_TAGGING n
+        CODETAG_TIME_STATS n
+        PERCPU_STATS n
       '' + (if debug then ''
           BCACHEFS_DEBUG y
           BCACHEFS_LOCK_TIME_STATS y

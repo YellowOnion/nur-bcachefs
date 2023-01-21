@@ -1,19 +1,15 @@
-From 2f612dd7d9140add7117b0ceaec477b2ed573994 Mon Sep 17 00:00:00 2001
+From cad5f0d8277b21806b65ca2168a76d60c7b59414 Mon Sep 17 00:00:00 2001
 From: Daniel Hill <daniel@gluo.nz>
 Date: Mon, 9 Jan 2023 01:49:42 +1300
-Subject: [PATCH 1/2] bcachefs: add tracepoint for bch2_alloc_sectors_trans()
+Subject: [PATCH 1/6] bcachefs: add tracepoint for bch2_alloc_sectors_trans()
 
 Signed-off-by: Daniel Hill <daniel@gluo.nz>
----
- fs/bcachefs/alloc_foreground.c  | 31 ++++++++++++++++++++++++++++++-
- include/trace/events/bcachefs.h | 13 +++++++++++++
- 2 files changed, 43 insertions(+), 1 deletion(-)
 
 diff --git a/fs/bcachefs/alloc_foreground.c b/fs/bcachefs/alloc_foreground.c
-index badf1075c9bf..de48c58a1f0e 100644
+index 4f86280856d1..3ff15ac4a4f4 100644
 --- a/fs/bcachefs/alloc_foreground.c
 +++ b/fs/bcachefs/alloc_foreground.c
-@@ -1129,7 +1129,7 @@ static struct write_point *writepoint_find(struct btree_trans *trans,
+@@ -1156,7 +1156,7 @@ static struct write_point *writepoint_find(struct btree_trans *trans,
  /*
   * Get us an open_bucket we can allocate from, return with it locked:
   */
@@ -22,7 +18,7 @@ index badf1075c9bf..de48c58a1f0e 100644
  				unsigned target,
  				unsigned erasure_code,
  				struct write_point_specifier write_point,
-@@ -1240,7 +1240,36 @@ struct write_point *bch2_alloc_sectors_start_trans(struct btree_trans *trans,
+@@ -1267,7 +1267,36 @@ struct write_point *bch2_alloc_sectors_start_trans(struct btree_trans *trans,
  
  	return ERR_PTR(ret);
  }
@@ -60,10 +56,10 @@ index badf1075c9bf..de48c58a1f0e 100644
  {
  	struct bch_dev *ca = bch_dev_bkey_exists(c, ob->dev);
 diff --git a/include/trace/events/bcachefs.h b/include/trace/events/bcachefs.h
-index 3fb658fa77ad..50dc6321e7c1 100644
+index 062e39234f64..3c1d44f2ff60 100644
 --- a/include/trace/events/bcachefs.h
 +++ b/include/trace/events/bcachefs.h
-@@ -656,6 +656,19 @@ TRACE_EVENT(bucket_invalidate,
+@@ -671,6 +671,19 @@ TRACE_EVENT(bucket_invalidate,
  		  __entry->sectors)
  );
  
@@ -84,18 +80,18 @@ index 3fb658fa77ad..50dc6321e7c1 100644
  
  DEFINE_EVENT(bkey, move_extent_read,
 -- 
-2.37.2
+2.39.0
 
 
-From e9b17f6424c89dd3dd7fb6e8edeebb9ece3194b4 Mon Sep 17 00:00:00 2001
+From 44b1367ddd99c03f6361e4df193ce037ac88459c Mon Sep 17 00:00:00 2001
 From: Daniel Hill <daniel@gluo.nz>
 Date: Tue, 10 Jan 2023 00:20:06 +1300
-Subject: [PATCH 2/2] bcachefs: FIX FOR PANIC IN REFLINK STUFF.
+Subject: [PATCH 2/6] bcachefs: fix a path leak in bch2_make_extent_indirect
+
+further investigation needed in to btree_path_put/get that might be
+causing this leak in other places.
 
 Signed-off-by: Daniel Hill <daniel@gluo.nz>
----
- fs/bcachefs/reflink.c | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/fs/bcachefs/reflink.c b/fs/bcachefs/reflink.c
 index 37ab38dd67eb..d600ee952a9b 100644
@@ -111,5 +107,640 @@ index 37ab38dd67eb..d600ee952a9b 100644
  			bch2_btree_iter_set_pos(&reflink_iter, POS_MIN);
  			continue;
 -- 
-2.37.2
+2.39.0
+
+
+From cbd8efb79316bea4969527f2ad38b64253e703c2 Mon Sep 17 00:00:00 2001
+From: Daniel Hill <daniel@gluo.nz>
+Date: Sat, 14 Jan 2023 01:05:22 +1300
+Subject: [PATCH 3/6] bcachefs: improve time_stats.
+
+new time_stats points to give us more precise measurements of
+various slow, problematic areas.
+
+Signed-off-by: Daniel Hill <daniel@gluo.nz>
+
+diff --git a/fs/bcachefs/bcachefs.h b/fs/bcachefs/bcachefs.h
+index 7477f841a8d4..84ecb529f33f 100644
+--- a/fs/bcachefs/bcachefs.h
++++ b/fs/bcachefs/bcachefs.h
+@@ -378,7 +378,13 @@ BCH_DEBUG_PARAMS_DEBUG()
+ 	x(blocked_journal)			\
+ 	x(blocked_allocate)			\
+ 	x(blocked_allocate_open_bucket)		\
+-	x(nocow_lock_contended)
++	x(nocow_lock_contended)			\
++	x(btree_node_mem_alloc_lock)		\
++	x(btree_node_mem_alloc_got_node)	\
++	x(btree_node_mem_alloc_unlock)		\
++	x(btree_node_mem_alloc_got_mem)		\
++	x(journal_write_alloc)
++
+ 
+ enum bch_time_stats {
+ #define x(name) BCH_TIME_##name,
+diff --git a/fs/bcachefs/btree_cache.c b/fs/bcachefs/btree_cache.c
+index b5e78042c1ff..56372746efd0 100644
+--- a/fs/bcachefs/btree_cache.c
++++ b/fs/bcachefs/btree_cache.c
+@@ -620,6 +620,8 @@ struct btree *bch2_btree_node_mem_alloc(struct bch_fs *c, bool pcpu_read_locks)
+ 	flags = memalloc_nofs_save();
+ 	mutex_lock(&bc->lock);
+ 
++	bch2_time_stats_update(&c->times[BCH_TIME_btree_node_mem_alloc_lock],
++			       start_time);
+ 	/*
+ 	 * We never free struct btree itself, just the memory that holds the on
+ 	 * disk node. Check the freed list before allocating a new one:
+@@ -645,6 +647,8 @@ struct btree *bch2_btree_node_mem_alloc(struct bch_fs *c, bool pcpu_read_locks)
+ 	BUG_ON(!six_trylock_intent(&b->c.lock));
+ 	BUG_ON(!six_trylock_write(&b->c.lock));
+ got_node:
++	bch2_time_stats_update(&c->times[BCH_TIME_btree_node_mem_alloc_got_node],
++			       start_time);
+ 
+ 	/*
+ 	 * btree_free() doesn't free memory; it sticks the node on the end of
+@@ -662,12 +666,17 @@ struct btree *bch2_btree_node_mem_alloc(struct bch_fs *c, bool pcpu_read_locks)
+ 
+ 	mutex_unlock(&bc->lock);
+ 
++	bch2_time_stats_update(&c->times[BCH_TIME_btree_node_mem_alloc_unlock],
++			       start_time);
++
+ 	if (btree_node_data_alloc(c, b, __GFP_NOWARN|GFP_KERNEL))
+ 		goto err;
+ 
+ 	mutex_lock(&bc->lock);
+ 	bc->used++;
+ got_mem:
++	bch2_time_stats_update(&c->times[BCH_TIME_btree_node_mem_alloc_got_mem],
++			       start_time);
+ 	mutex_unlock(&bc->lock);
+ 
+ 	BUG_ON(btree_node_hashed(b));
+diff --git a/fs/bcachefs/journal_io.c b/fs/bcachefs/journal_io.c
+index f6374a2bdc83..cd9c6dccdf5f 100644
+--- a/fs/bcachefs/journal_io.c
++++ b/fs/bcachefs/journal_io.c
+@@ -1380,6 +1380,7 @@ static int journal_write_alloc(struct journal *j, struct journal_buf *w,
+ 		c->opts.foreground_target;
+ 	unsigned i, replicas = 0, replicas_want =
+ 		READ_ONCE(c->opts.metadata_replicas);
++	u64 start_time = local_clock();
+ 
+ 	rcu_read_lock();
+ retry:
+@@ -1426,6 +1427,9 @@ static int journal_write_alloc(struct journal *j, struct journal_buf *w,
+ done:
+ 	rcu_read_unlock();
+ 
++	bch2_time_stats_update(&c->times[BCH_TIME_journal_write_alloc],
++			       start_time);
++
+ 	BUG_ON(bkey_val_u64s(&w->key.k) > BCH_REPLICAS_MAX);
+ 
+ 	return replicas >= c->opts.metadata_replicas_required ? 0 : -EROFS;
+-- 
+2.39.0
+
+
+From 868e858a3c286ed6e60e96787458013ebb7f8edf Mon Sep 17 00:00:00 2001
+From: Daniel Hill <daniel@gluo.nz>
+Date: Fri, 20 Jan 2023 01:27:30 +1300
+Subject: [PATCH 4/6] bcachefs: let __bch2_btree_insert() pass in flags
+
+This fixes a trigger running, and tripping up fsck when trying to repair
+missing indirect extent.
+
+Signed-off-by: Daniel Hill <daniel@gluo.nz>
+
+diff --git a/fs/bcachefs/alloc_background.c b/fs/bcachefs/alloc_background.c
+index 42301215e6d7..a8ea73025c8a 100644
+--- a/fs/bcachefs/alloc_background.c
++++ b/fs/bcachefs/alloc_background.c
+@@ -674,7 +674,7 @@ int bch2_bucket_gens_init(struct bch_fs *c)
+ 			ret = commit_do(&trans, NULL, NULL,
+ 					BTREE_INSERT_NOFAIL|
+ 					BTREE_INSERT_LAZY_RW,
+-				__bch2_btree_insert(&trans, BTREE_ID_bucket_gens, &g.k_i));
++				__bch2_btree_insert(&trans, BTREE_ID_bucket_gens, &g.k_i, 0));
+ 			if (ret)
+ 				break;
+ 			have_bucket_gens_key = false;
+@@ -694,7 +694,7 @@ int bch2_bucket_gens_init(struct bch_fs *c)
+ 		ret = commit_do(&trans, NULL, NULL,
+ 				BTREE_INSERT_NOFAIL|
+ 				BTREE_INSERT_LAZY_RW,
+-			__bch2_btree_insert(&trans, BTREE_ID_bucket_gens, &g.k_i));
++			__bch2_btree_insert(&trans, BTREE_ID_bucket_gens, &g.k_i, 0));
+ 
+ 	bch2_trans_exit(&trans);
+ 
+@@ -1938,7 +1938,7 @@ static int bch2_dev_freespace_init(struct bch_fs *c, struct bch_dev *ca)
+ 			freespace->k.p		= k.k->p;
+ 			freespace->k.size	= k.k->size;
+ 
+-			ret = __bch2_btree_insert(&trans, BTREE_ID_freespace, freespace) ?:
++			ret = __bch2_btree_insert(&trans, BTREE_ID_freespace, freespace, 0) ?:
+ 				bch2_trans_commit(&trans, NULL, NULL,
+ 						  BTREE_INSERT_LAZY_RW|
+ 						  BTREE_INSERT_NOFAIL);
+diff --git a/fs/bcachefs/btree_update.h b/fs/bcachefs/btree_update.h
+index 7e9f1f170d5f..913a01dc52f1 100644
+--- a/fs/bcachefs/btree_update.h
++++ b/fs/bcachefs/btree_update.h
+@@ -55,7 +55,8 @@ int bch2_btree_delete_extent_at(struct btree_trans *, struct btree_iter *,
+ 				unsigned, unsigned);
+ int bch2_btree_delete_at(struct btree_trans *, struct btree_iter *, unsigned);
+ 
+-int __bch2_btree_insert(struct btree_trans *, enum btree_id, struct bkey_i *);
++int __bch2_btree_insert(struct btree_trans *, enum btree_id, struct bkey_i *,
++			enum btree_update_flags);
+ int bch2_btree_insert(struct bch_fs *, enum btree_id, struct bkey_i *,
+ 		     struct disk_reservation *, u64 *, int flags);
+ 
+diff --git a/fs/bcachefs/btree_update_leaf.c b/fs/bcachefs/btree_update_leaf.c
+index 9cd9eb7effff..ec895b840a6f 100644
+--- a/fs/bcachefs/btree_update_leaf.c
++++ b/fs/bcachefs/btree_update_leaf.c
+@@ -1622,7 +1622,8 @@ void bch2_trans_commit_hook(struct btree_trans *trans,
+ }
+ 
+ int __bch2_btree_insert(struct btree_trans *trans,
+-			enum btree_id id, struct bkey_i *k)
++			enum btree_id id,
++			struct bkey_i *k, enum btree_update_flags flags)
+ {
+ 	struct btree_iter iter;
+ 	int ret;
+@@ -1630,7 +1631,7 @@ int __bch2_btree_insert(struct btree_trans *trans,
+ 	bch2_trans_iter_init(trans, &iter, id, bkey_start_pos(&k->k),
+ 			     BTREE_ITER_INTENT);
+ 	ret   = bch2_btree_iter_traverse(&iter) ?:
+-		bch2_trans_update(trans, &iter, k, 0);
++		bch2_trans_update(trans, &iter, k, flags);
+ 	bch2_trans_iter_exit(trans, &iter);
+ 	return ret;
+ }
+@@ -1648,7 +1649,7 @@ int bch2_btree_insert(struct bch_fs *c, enum btree_id id,
+ 		      u64 *journal_seq, int flags)
+ {
+ 	return bch2_trans_do(c, disk_res, journal_seq, flags,
+-			     __bch2_btree_insert(&trans, id, k));
++			     __bch2_btree_insert(&trans, id, k, 0));
+ }
+ 
+ int bch2_btree_delete_extent_at(struct btree_trans *trans, struct btree_iter *iter,
+diff --git a/fs/bcachefs/buckets.c b/fs/bcachefs/buckets.c
+index 46cfadb9ce33..48b741885ddf 100644
+--- a/fs/bcachefs/buckets.c
++++ b/fs/bcachefs/buckets.c
+@@ -1220,7 +1220,8 @@ static s64 __bch2_mark_reflink_p(struct btree_trans *trans,
+ 		new->k.p		= bkey_start_pos(p.k);
+ 		new->k.p.offset += *idx - start;
+ 		bch2_key_resize(&new->k, next_idx - *idx);
+-		ret = __bch2_btree_insert(trans, BTREE_ID_extents, &new->k_i);
++		ret = __bch2_btree_insert(trans, BTREE_ID_extents, &new->k_i,
++					  BTREE_TRIGGER_NORUN);
+ 	}
+ 
+ 	*idx = next_idx;
+diff --git a/fs/bcachefs/fsck.c b/fs/bcachefs/fsck.c
+index 3b71eedb05a4..b68f87c088d7 100644
+--- a/fs/bcachefs/fsck.c
++++ b/fs/bcachefs/fsck.c
+@@ -1797,7 +1797,8 @@ static int check_root_trans(struct btree_trans *trans)
+ 		ret = commit_do(trans, NULL, NULL,
+ 				      BTREE_INSERT_NOFAIL|
+ 				      BTREE_INSERT_LAZY_RW,
+-			__bch2_btree_insert(trans, BTREE_ID_subvolumes, &root_subvol.k_i));
++			__bch2_btree_insert(trans, BTREE_ID_subvolumes,
++					    &root_subvol.k_i, 0));
+ 		if (ret) {
+ 			bch_err(c, "error writing root subvol: %s", bch2_err_str(ret));
+ 			goto err;
+diff --git a/fs/bcachefs/tests.c b/fs/bcachefs/tests.c
+index 80fce1c95470..d352821d5614 100644
+--- a/fs/bcachefs/tests.c
++++ b/fs/bcachefs/tests.c
+@@ -592,7 +592,7 @@ static int rand_insert(struct bch_fs *c, u64 nr)
+ 		k.k.p.snapshot = U32_MAX;
+ 
+ 		ret = commit_do(&trans, NULL, NULL, 0,
+-			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k.k_i));
++			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k.k_i, 0));
+ 		if (ret) {
+ 			bch_err(c, "%s(): error %s", __func__, bch2_err_str(ret));
+ 			break;
+@@ -621,14 +621,14 @@ static int rand_insert_multi(struct bch_fs *c, u64 nr)
+ 		}
+ 
+ 		ret = commit_do(&trans, NULL, NULL, 0,
+-			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[0].k_i) ?:
+-			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[1].k_i) ?:
+-			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[2].k_i) ?:
+-			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[3].k_i) ?:
+-			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[4].k_i) ?:
+-			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[5].k_i) ?:
+-			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[6].k_i) ?:
+-			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[7].k_i));
++			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[0].k_i, 0) ?:
++			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[1].k_i, 0) ?:
++			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[2].k_i, 0) ?:
++			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[3].k_i, 0) ?:
++			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[4].k_i, 0) ?:
++			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[5].k_i, 0) ?:
++			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[6].k_i, 0) ?:
++			__bch2_btree_insert(&trans, BTREE_ID_xattrs, &k[7].k_i, 0));
+ 		if (ret) {
+ 			bch_err(c, "%s(): error %s", __func__, bch2_err_str(ret));
+ 			break;
+-- 
+2.39.0
+
+
+From 9db8da591c038c41aa1a582e4a744113f6a23418 Mon Sep 17 00:00:00 2001
+From: Daniel Hill <daniel@gluo.nz>
+Date: Sat, 21 Jan 2023 17:08:31 +1300
+Subject: [PATCH 5/6] fixup! sched/tracing: trace_sched_blocked()
+
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 8c2f40982318..d82d7ca7b605 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -36,6 +36,7 @@
+ #include <linux/sched/nohz.h>
+ #include <linux/sched/rseq_api.h>
+ #include <linux/sched/rt.h>
++#include <linux/sched.h>
+ 
+ #include <linux/blkdev.h>
+ #include <linux/context_tracking.h>
+@@ -6523,7 +6524,7 @@ static void __sched notrace __schedule(unsigned int sched_mode)
+ 		/* Also unlocks the rq: */
+ 		rq = context_switch(rq, prev, next, &rf);
+ 
+-		trace_sched_blocked(time_after(now, next->schedule_time)
++		trace_sched_blocked(time_after64(now, next->schedule_time)
+ 				    ? now - next->schedule_time
+ 				    : 0);
+ 	} else {
+-- 
+2.39.0
+
+
+From 38fbd554c718608949f769df0e54290a2f656adc Mon Sep 17 00:00:00 2001
+From: Daniel Hill <daniel@gluo.nz>
+Date: Sat, 21 Jan 2023 17:51:15 +1300
+Subject: [PATCH 6/6] Revert "bcache: Convert to lib/time_stats"
+
+This reverts commit 1b1903056ffbcd7caf5580af3e81ea9f33407e2f.
+
+diff --git a/drivers/md/bcache/Kconfig b/drivers/md/bcache/Kconfig
+index 7ea057983d3d..b2d10063d35f 100644
+--- a/drivers/md/bcache/Kconfig
++++ b/drivers/md/bcache/Kconfig
+@@ -5,7 +5,6 @@ config BCACHE
+ 	select BLOCK_HOLDER_DEPRECATED if SYSFS
+ 	select CRC64
+ 	select CLOSURES
+-	select TIME_STATS
+ 	help
+ 	Allows a block device to be used as cache for other devices; uses
+ 	a btree for indexing and the layout is optimized for SSDs.
+diff --git a/drivers/md/bcache/bcache.h b/drivers/md/bcache/bcache.h
+index c58d6ac262c2..c8b4914ad8da 100644
+--- a/drivers/md/bcache/bcache.h
++++ b/drivers/md/bcache/bcache.h
+@@ -186,7 +186,6 @@
+ #include <linux/rbtree.h>
+ #include <linux/rwsem.h>
+ #include <linux/refcount.h>
+-#include <linux/time_stats.h>
+ #include <linux/types.h>
+ #include <linux/workqueue.h>
+ #include <linux/kthread.h>
+diff --git a/drivers/md/bcache/bset.c b/drivers/md/bcache/bset.c
+index 03358d200709..2bba4d6aaaa2 100644
+--- a/drivers/md/bcache/bset.c
++++ b/drivers/md/bcache/bset.c
+@@ -1251,7 +1251,7 @@ static void __btree_sort(struct btree_keys *b, struct btree_iter *iter,
+ 		order = state->page_order;
+ 	}
+ 
+-	start_time = ktime_get_ns();
++	start_time = local_clock();
+ 
+ 	btree_mergesort(b, out, iter, fixup, false);
+ 	b->nsets = start;
+@@ -1286,7 +1286,7 @@ static void __btree_sort(struct btree_keys *b, struct btree_iter *iter,
+ 	bch_bset_build_written_tree(b);
+ 
+ 	if (!start)
+-		time_stats_update(&state->time, start_time);
++		bch_time_stats_update(&state->time, start_time);
+ }
+ 
+ void bch_btree_sort_partial(struct btree_keys *b, unsigned int start,
+@@ -1322,14 +1322,14 @@ void bch_btree_sort_and_fix_extents(struct btree_keys *b,
+ void bch_btree_sort_into(struct btree_keys *b, struct btree_keys *new,
+ 			 struct bset_sort_state *state)
+ {
+-	uint64_t start_time = ktime_get_ns();
++	uint64_t start_time = local_clock();
+ 	struct btree_iter iter;
+ 
+ 	bch_btree_iter_init(b, &iter, NULL);
+ 
+ 	btree_mergesort(b, new->set->data, &iter, false, true);
+ 
+-	time_stats_update(&state->time, start_time);
++	bch_time_stats_update(&state->time, start_time);
+ 
+ 	new->set->size = 0; // XXX: why?
+ }
+diff --git a/drivers/md/bcache/bset.h b/drivers/md/bcache/bset.h
+index 13e524ad7783..d795c84246b0 100644
+--- a/drivers/md/bcache/bset.h
++++ b/drivers/md/bcache/bset.h
+@@ -3,7 +3,6 @@
+ #define _BCACHE_BSET_H
+ 
+ #include <linux/kernel.h>
+-#include <linux/time_stats.h>
+ #include <linux/types.h>
+ 
+ #include "bcache_ondisk.h"
+diff --git a/drivers/md/bcache/btree.c b/drivers/md/bcache/btree.c
+index abf543bc7551..147c493a989a 100644
+--- a/drivers/md/bcache/btree.c
++++ b/drivers/md/bcache/btree.c
+@@ -242,7 +242,7 @@ static void btree_node_read_endio(struct bio *bio)
+ 
+ static void bch_btree_node_read(struct btree *b)
+ {
+-	uint64_t start_time = ktime_get_ns();
++	uint64_t start_time = local_clock();
+ 	struct closure cl;
+ 	struct bio *bio;
+ 
+@@ -270,7 +270,7 @@ static void bch_btree_node_read(struct btree *b)
+ 		goto err;
+ 
+ 	bch_btree_node_read_done(b);
+-	time_stats_update(&b->c->btree_read_time, start_time);
++	bch_time_stats_update(&b->c->btree_read_time, start_time);
+ 
+ 	return;
+ err:
+@@ -1789,7 +1789,7 @@ static void bch_btree_gc(struct cache_set *c)
+ 	struct gc_stat stats;
+ 	struct closure writes;
+ 	struct btree_op op;
+-	uint64_t start_time = ktime_get_ns();
++	uint64_t start_time = local_clock();
+ 
+ 	trace_bcache_gc_start(c);
+ 
+@@ -1815,7 +1815,7 @@ static void bch_btree_gc(struct cache_set *c)
+ 	bch_btree_gc_finish(c);
+ 	wake_up_allocators(c);
+ 
+-	time_stats_update(&c->btree_gc_time, start_time);
++	bch_time_stats_update(&c->btree_gc_time, start_time);
+ 
+ 	stats.key_bytes *= sizeof(uint64_t);
+ 	stats.data	<<= 9;
+@@ -2191,7 +2191,7 @@ static int btree_split(struct btree *b, struct btree_op *op,
+ {
+ 	bool split;
+ 	struct btree *n1, *n2 = NULL, *n3 = NULL;
+-	uint64_t start_time = ktime_get_ns();
++	uint64_t start_time = local_clock();
+ 	struct closure cl;
+ 	struct keylist parent_keys;
+ 
+@@ -2297,7 +2297,7 @@ static int btree_split(struct btree *b, struct btree_op *op,
+ 	btree_node_free(b);
+ 	rw_unlock(true, n1);
+ 
+-	time_stats_update(&b->c->btree_split_time, start_time);
++	bch_time_stats_update(&b->c->btree_split_time, start_time);
+ 
+ 	return 0;
+ err_free2:
+diff --git a/drivers/md/bcache/super.c b/drivers/md/bcache/super.c
+index 8a988cfe20ce..31b68a1b87c3 100644
+--- a/drivers/md/bcache/super.c
++++ b/drivers/md/bcache/super.c
+@@ -1691,9 +1691,6 @@ static void cache_set_free(struct closure *cl)
+ 		kobject_put(&ca->kobj);
+ 	}
+ 
+-	time_stats_exit(&c->btree_gc_time);
+-	time_stats_exit(&c->btree_split_time);
+-	time_stats_exit(&c->sort.time);
+ 
+ 	if (c->moving_gc_wq)
+ 		destroy_workqueue(c->moving_gc_wq);
+diff --git a/drivers/md/bcache/sysfs.c b/drivers/md/bcache/sysfs.c
+index 01eec5877cd7..c6f677059214 100644
+--- a/drivers/md/bcache/sysfs.c
++++ b/drivers/md/bcache/sysfs.c
+@@ -16,7 +16,6 @@
+ #include <linux/blkdev.h>
+ #include <linux/sort.h>
+ #include <linux/sched/clock.h>
+-#include <linux/seq_buf.h>
+ 
+ extern bool bcache_is_reboot;
+ 
+@@ -80,10 +79,10 @@ read_attribute(active_journal_entries);
+ read_attribute(backing_dev_name);
+ read_attribute(backing_dev_uuid);
+ 
+-read_attribute(btree_gc_time);
+-read_attribute(btree_split_time);
+-read_attribute(btree_sort_time);
+-read_attribute(btree_read_time);
++sysfs_time_stats_attribute(btree_gc,	sec, ms);
++sysfs_time_stats_attribute(btree_split, sec, us);
++sysfs_time_stats_attribute(btree_sort,	ms,  us);
++sysfs_time_stats_attribute(btree_read,	ms,  us);
+ 
+ read_attribute(btree_nodes);
+ read_attribute(btree_used_percent);
+@@ -732,9 +731,6 @@ static unsigned int bch_average_key_size(struct cache_set *c)
+ SHOW(__bch_cache_set)
+ {
+ 	struct cache_set *c = container_of(kobj, struct cache_set, kobj);
+-	struct seq_buf s;
+-
+-	seq_buf_init(&s, buf, PAGE_SIZE);
+ 
+ 	sysfs_print(synchronous,		CACHE_SYNC(&c->cache->sb));
+ 	sysfs_print(journal_delay_ms,		c->journal_delay_ms);
+@@ -747,25 +743,10 @@ SHOW(__bch_cache_set)
+ 	sysfs_print(btree_cache_max_chain,	bch_cache_max_chain(c));
+ 	sysfs_print(cache_available_percent,	100 - c->gc_stats.in_use);
+ 
+-	if (attr == &sysfs_btree_gc_time) {
+-		time_stats_to_text(&s, &c->btree_gc_time);
+-		return s.len;
+-	}
+-
+-	if (attr == &sysfs_btree_split_time) {
+-		time_stats_to_text(&s, &c->btree_split_time);
+-		return s.len;
+-	}
+-
+-	if (attr == &sysfs_btree_sort_time) {
+-		time_stats_to_text(&s, &c->sort.time);
+-		return s.len;
+-	}
+-
+-	if (attr == &sysfs_btree_read_time) {
+-		time_stats_to_text(&s, &c->btree_read_time);
+-		return s.len;
+-	}
++	sysfs_print_time_stats(&c->btree_gc_time,	btree_gc, sec, ms);
++	sysfs_print_time_stats(&c->btree_split_time,	btree_split, sec, us);
++	sysfs_print_time_stats(&c->sort.time,		btree_sort, ms, us);
++	sysfs_print_time_stats(&c->btree_read_time,	btree_read, ms, us);
+ 
+ 	sysfs_print(btree_used_percent,	bch_btree_used(c));
+ 	sysfs_print(btree_nodes,	c->gc_stats.nodes);
+@@ -1007,10 +988,10 @@ KTYPE(bch_cache_set);
+ static struct attribute *bch_cache_set_internal_attrs[] = {
+ 	&sysfs_active_journal_entries,
+ 
+-	&sysfs_btree_gc_time,
+-	&sysfs_btree_split_time,
+-	&sysfs_btree_sort_time,
+-	&sysfs_btree_read_time,
++	sysfs_time_stats_attribute_list(btree_gc, sec, ms)
++	sysfs_time_stats_attribute_list(btree_split, sec, us)
++	sysfs_time_stats_attribute_list(btree_sort, ms, us)
++	sysfs_time_stats_attribute_list(btree_read, ms, us)
+ 
+ 	&sysfs_btree_nodes,
+ 	&sysfs_btree_used_percent,
+diff --git a/drivers/md/bcache/util.c b/drivers/md/bcache/util.c
+index 95282bf0f9a7..ae380bc3992e 100644
+--- a/drivers/md/bcache/util.c
++++ b/drivers/md/bcache/util.c
+@@ -160,6 +160,36 @@ int bch_parse_uuid(const char *s, char *uuid)
+ 	return i;
+ }
+ 
++void bch_time_stats_update(struct time_stats *stats, uint64_t start_time)
++{
++	uint64_t now, duration, last;
++
++	spin_lock(&stats->lock);
++
++	now		= local_clock();
++	duration	= time_after64(now, start_time)
++		? now - start_time : 0;
++	last		= time_after64(now, stats->last)
++		? now - stats->last : 0;
++
++	stats->max_duration = max(stats->max_duration, duration);
++
++	if (stats->last) {
++		ewma_add(stats->average_duration, duration, 8, 8);
++
++		if (stats->average_frequency)
++			ewma_add(stats->average_frequency, last, 8, 8);
++		else
++			stats->average_frequency  = last << 8;
++	} else {
++		stats->average_duration  = duration << 8;
++	}
++
++	stats->last = now ?: 1;
++
++	spin_unlock(&stats->lock);
++}
++
+ /**
+  * bch_next_delay() - update ratelimiting statistics and calculate next delay
+  * @d: the struct bch_ratelimit to update
+diff --git a/drivers/md/bcache/util.h b/drivers/md/bcache/util.h
+index aeffedac8d77..f61ab1bada6c 100644
+--- a/drivers/md/bcache/util.h
++++ b/drivers/md/bcache/util.h
+@@ -344,11 +344,68 @@ ssize_t bch_hprint(char *buf, int64_t v);
+ bool bch_is_zero(const char *p, size_t n);
+ int bch_parse_uuid(const char *s, char *uuid);
+ 
++struct time_stats {
++	spinlock_t	lock;
++	/*
++	 * all fields are in nanoseconds, averages are ewmas stored left shifted
++	 * by 8
++	 */
++	uint64_t	max_duration;
++	uint64_t	average_duration;
++	uint64_t	average_frequency;
++	uint64_t	last;
++};
++
++void bch_time_stats_update(struct time_stats *stats, uint64_t time);
++
+ static inline unsigned int local_clock_us(void)
+ {
+ 	return local_clock() >> 10;
+ }
+ 
++#define NSEC_PER_ns			1L
++#define NSEC_PER_us			NSEC_PER_USEC
++#define NSEC_PER_ms			NSEC_PER_MSEC
++#define NSEC_PER_sec			NSEC_PER_SEC
++
++#define __print_time_stat(stats, name, stat, units)			\
++	sysfs_print(name ## _ ## stat ## _ ## units,			\
++		    div_u64((stats)->stat >> 8, NSEC_PER_ ## units))
++
++#define sysfs_print_time_stats(stats, name,				\
++			       frequency_units,				\
++			       duration_units)				\
++do {									\
++	__print_time_stat(stats, name,					\
++			  average_frequency,	frequency_units);	\
++	__print_time_stat(stats, name,					\
++			  average_duration,	duration_units);	\
++	sysfs_print(name ## _ ##max_duration ## _ ## duration_units,	\
++			div_u64((stats)->max_duration,			\
++				NSEC_PER_ ## duration_units));		\
++									\
++	sysfs_print(name ## _last_ ## frequency_units, (stats)->last	\
++		    ? div_s64(local_clock() - (stats)->last,		\
++			      NSEC_PER_ ## frequency_units)		\
++		    : -1LL);						\
++} while (0)
++
++#define sysfs_time_stats_attribute(name,				\
++				   frequency_units,			\
++				   duration_units)			\
++read_attribute(name ## _average_frequency_ ## frequency_units);		\
++read_attribute(name ## _average_duration_ ## duration_units);		\
++read_attribute(name ## _max_duration_ ## duration_units);		\
++read_attribute(name ## _last_ ## frequency_units)
++
++#define sysfs_time_stats_attribute_list(name,				\
++					frequency_units,		\
++					duration_units)			\
++&sysfs_ ## name ## _average_frequency_ ## frequency_units,		\
++&sysfs_ ## name ## _average_duration_ ## duration_units,		\
++&sysfs_ ## name ## _max_duration_ ## duration_units,			\
++&sysfs_ ## name ## _last_ ## frequency_units,
++
+ #define ewma_add(ewma, val, weight, factor)				\
+ ({									\
+ 	(ewma) *= (weight) - 1;						\
+-- 
+2.39.0
 
