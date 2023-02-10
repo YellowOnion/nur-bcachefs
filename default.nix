@@ -17,6 +17,7 @@ let
       pkgs.kernelPatches.bridge_stp_helper
       pkgs.kernelPatches.request_key_helper
     ] ++ extraPatches;
+    useLocalPatch = false;
   });
 
   bcachefs-tools = (import (pkgs.fetchgit {

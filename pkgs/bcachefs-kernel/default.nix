@@ -1,10 +1,19 @@
-{ broken, debug ? false , lib, fetchurl, kernel, kernelPatches, version, ...} @ args:
+{
+  broken
+, debug ? false
+, lib
+, fetchurl
+, kernel
+, kernelPatches
+, version
+, useLocalPatch ? false
+, ...} @ args:
 
 with lib;
 
 let
-  commit = "70c3348bf59f5b45afb0b90d8c41aa317bc59b3d";
-  diffHash = "1as8f72zrzwjh71vdf2r5pykhp2hw4lh3m2dpy2m39gwdf4ys7x3";
+  commit = "5fc458d032ccbf6d0c772af050de3d3b102d7d6e";
+  diffHash = "1cnfmlwhajfrr68vf5s90ciih81b9zna2sqc9lqnbcs08vx0vxlh";
   shorthash = lib.strings.substring 0 7 commit;
   kernelVersion = kernel.version;
   oldPatches = kernelPatches;
@@ -20,11 +29,14 @@ let
 
   kernelPatches = [{
       name = "bcachefs-${commit}";
-      patch = fetchurl {
-        name = "bcachefs-${commit}.diff";
-        url = "https://evilpiepirate.org/git/bcachefs.git/rawdiff/?id=${commit}&id2=v${lib.versions.majorMinor kernelVersion}";
-        sha256 = diffHash;
-      };
+      patch =
+        if useLocalPatch
+          then ../../bcachefs-patches
+          else fetchurl {
+                name = "bcachefs-${commit}.diff";
+                url  = "https://evilpiepirate.org/git/bcachefs.git/rawdiff/?id=${commit}&id2=v${lib.versions.majorMinor kernelVersion}";
+                sha256 = diffHash;
+              };
       extraConfig = (''
         LOCALVERSION -bcachefs-${shorthash}
         CRYPTO_CRC32C_INTEL y
