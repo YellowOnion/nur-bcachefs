@@ -30,7 +30,7 @@ let
     { name = "woob-bcachefs-testing.patch";
       patch = ./pkgs/bcachefs-kernel/woob.patch; }
     ];
-  bcachefs-kernel-woob-debug = mkKernel true "woob-testing" true [
+  bcachefs-kernel-woob-debug = mkKernel false "woob-testing" true [
     { name = "woob-bcachefs-testing.patch";
       patch = ./pkgs/bcachefs-kernel/woob.patch; }
   ];
