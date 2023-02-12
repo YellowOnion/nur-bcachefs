@@ -1,4 +1,4 @@
-From 1ced770287e07e0f2afa4169253dcb503ce5a0d9 Mon Sep 17 00:00:00 2001
+From 6915afa26dd090cae09225b4fd46fdd50b542a8d Mon Sep 17 00:00:00 2001
 From: Daniel Hill <daniel@gluo.nz>
 Date: Tue, 10 Jan 2023 00:20:06 +1300
 Subject: [PATCH 1/3] bcachefs: fix a path leak in bch2_make_extent_indirect
@@ -22,10 +22,10 @@ index 87446f7bad4f..f74c659d86f9 100644
  			bch2_btree_iter_set_pos(&reflink_iter, POS_MIN);
  			continue;
 -- 
-2.39.0
+2.38.1
 
 
-From b32bbeb4a26f28a4c2a2c6d1599c1816c1e0c7a2 Mon Sep 17 00:00:00 2001
+From 514078caf6a81bacff978c6db30ab9aeb96a9824 Mon Sep 17 00:00:00 2001
 From: Daniel Hill <daniel@gluo.nz>
 Date: Sat, 14 Jan 2023 01:05:22 +1300
 Subject: [PATCH 2/3] bcachefs: improve time_stats.
@@ -36,10 +36,10 @@ various slow, problematic areas.
 Signed-off-by: Daniel Hill <daniel@gluo.nz>
 
 diff --git a/fs/bcachefs/bcachefs.h b/fs/bcachefs/bcachefs.h
-index f51317337580..b76745842959 100644
+index c8620127f1ae..c33965eaeeba 100644
 --- a/fs/bcachefs/bcachefs.h
 +++ b/fs/bcachefs/bcachefs.h
-@@ -382,7 +382,13 @@ BCH_DEBUG_PARAMS_DEBUG()
+@@ -385,7 +385,13 @@ BCH_DEBUG_PARAMS_DEBUG()
  	x(blocked_journal)			\
  	x(blocked_allocate)			\
  	x(blocked_allocate_open_bucket)		\
@@ -117,10 +117,10 @@ index f6374a2bdc83..cd9c6dccdf5f 100644
  
  	return replicas >= c->opts.metadata_replicas_required ? 0 : -EROFS;
 -- 
-2.39.0
+2.38.1
 
 
-From b8060a52c0aa2345494548a39a2f9c77ab8d9502 Mon Sep 17 00:00:00 2001
+From 632aae2bb4095f19c58c208ad06c39cec260d8d0 Mon Sep 17 00:00:00 2001
 From: Daniel Hill <daniel@gluo.nz>
 Date: Fri, 20 Jan 2023 01:27:30 +1300
 Subject: [PATCH 3/3] bcachefs: let __bch2_btree_insert() pass in flags
@@ -131,10 +131,10 @@ missing indirect extent.
 Signed-off-by: Daniel Hill <daniel@gluo.nz>
 
 diff --git a/fs/bcachefs/alloc_background.c b/fs/bcachefs/alloc_background.c
-index 6fd948f11c0e..6fe46d3acc46 100644
+index 93a58f8f9d3b..2db44365a4ec 100644
 --- a/fs/bcachefs/alloc_background.c
 +++ b/fs/bcachefs/alloc_background.c
-@@ -674,7 +674,7 @@ int bch2_bucket_gens_init(struct bch_fs *c)
+@@ -673,7 +673,7 @@ int bch2_bucket_gens_init(struct bch_fs *c)
  			ret = commit_do(&trans, NULL, NULL,
  					BTREE_INSERT_NOFAIL|
  					BTREE_INSERT_LAZY_RW,
@@ -143,7 +143,7 @@ index 6fd948f11c0e..6fe46d3acc46 100644
  			if (ret)
  				break;
  			have_bucket_gens_key = false;
-@@ -694,7 +694,7 @@ int bch2_bucket_gens_init(struct bch_fs *c)
+@@ -693,7 +693,7 @@ int bch2_bucket_gens_init(struct bch_fs *c)
  		ret = commit_do(&trans, NULL, NULL,
  				BTREE_INSERT_NOFAIL|
  				BTREE_INSERT_LAZY_RW,
@@ -152,7 +152,7 @@ index 6fd948f11c0e..6fe46d3acc46 100644
  
  	bch2_trans_exit(&trans);
  
-@@ -1934,7 +1934,7 @@ static int bch2_dev_freespace_init(struct bch_fs *c, struct bch_dev *ca)
+@@ -1933,7 +1933,7 @@ static int bch2_dev_freespace_init(struct bch_fs *c, struct bch_dev *ca)
  			freespace->k.p		= k.k->p;
  			freespace->k.size	= k.k->size;
  
@@ -162,10 +162,10 @@ index 6fd948f11c0e..6fe46d3acc46 100644
  						  BTREE_INSERT_LAZY_RW|
  						  BTREE_INSERT_NOFAIL);
 diff --git a/fs/bcachefs/btree_update.h b/fs/bcachefs/btree_update.h
-index 673c3a78aae2..7ddebf90cddf 100644
+index 96d27e34d5b1..771e4b239c66 100644
 --- a/fs/bcachefs/btree_update.h
 +++ b/fs/bcachefs/btree_update.h
-@@ -55,7 +55,8 @@ int bch2_btree_delete_extent_at(struct btree_trans *, struct btree_iter *,
+@@ -58,7 +58,8 @@ int bch2_btree_delete_extent_at(struct btree_trans *, struct btree_iter *,
  				unsigned, unsigned);
  int bch2_btree_delete_at(struct btree_trans *, struct btree_iter *, unsigned);
  
@@ -176,10 +176,10 @@ index 673c3a78aae2..7ddebf90cddf 100644
  		     struct disk_reservation *, u64 *, int flags);
  
 diff --git a/fs/bcachefs/btree_update_leaf.c b/fs/bcachefs/btree_update_leaf.c
-index 6cbc0e5e1fe8..bc2decea1214 100644
+index 956b377adcd8..0195b13de152 100644
 --- a/fs/bcachefs/btree_update_leaf.c
 +++ b/fs/bcachefs/btree_update_leaf.c
-@@ -1614,7 +1614,8 @@ void bch2_trans_commit_hook(struct btree_trans *trans,
+@@ -1748,7 +1748,8 @@ void bch2_trans_commit_hook(struct btree_trans *trans,
  }
  
  int __bch2_btree_insert(struct btree_trans *trans,
@@ -189,7 +189,7 @@ index 6cbc0e5e1fe8..bc2decea1214 100644
  {
  	struct btree_iter iter;
  	int ret;
-@@ -1622,7 +1623,7 @@ int __bch2_btree_insert(struct btree_trans *trans,
+@@ -1756,7 +1757,7 @@ int __bch2_btree_insert(struct btree_trans *trans,
  	bch2_trans_iter_init(trans, &iter, id, bkey_start_pos(&k->k),
  			     BTREE_ITER_INTENT);
  	ret   = bch2_btree_iter_traverse(&iter) ?:
@@ -198,7 +198,7 @@ index 6cbc0e5e1fe8..bc2decea1214 100644
  	bch2_trans_iter_exit(trans, &iter);
  	return ret;
  }
-@@ -1640,7 +1641,7 @@ int bch2_btree_insert(struct bch_fs *c, enum btree_id id,
+@@ -1774,7 +1775,7 @@ int bch2_btree_insert(struct bch_fs *c, enum btree_id id,
  		      u64 *journal_seq, int flags)
  {
  	return bch2_trans_do(c, disk_res, journal_seq, flags,
@@ -208,7 +208,7 @@ index 6cbc0e5e1fe8..bc2decea1214 100644
  
  int bch2_btree_delete_extent_at(struct btree_trans *trans, struct btree_iter *iter,
 diff --git a/fs/bcachefs/buckets.c b/fs/bcachefs/buckets.c
-index ac0328c4f2c1..e36f018d0fd4 100644
+index 584b87b769a3..9526c9eea8ae 100644
 --- a/fs/bcachefs/buckets.c
 +++ b/fs/bcachefs/buckets.c
 @@ -1220,7 +1220,8 @@ static s64 __bch2_mark_reflink_p(struct btree_trans *trans,
@@ -272,5 +272,5 @@ index 80fce1c95470..d352821d5614 100644
  			bch_err(c, "%s(): error %s", __func__, bch2_err_str(ret));
  			break;
 -- 
-2.39.0
+2.38.1
 
