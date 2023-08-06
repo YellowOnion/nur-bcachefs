@@ -1,50 +1,52 @@
 {
   broken
+, rebaseBroken ? false
 , debug ? false
 , lib
 , fetchurl
+, fetchgit
 , kernel
 , kernelPatches
-, version
+, variant
 , useLocalPatch ? false
+, buildLinux
 , ...} @ args:
 
 with lib;
 
 let
-  commit = "8e1519ccb62b76736d5b9ca97e58b41ed9a11274";
-  diffHash = "11ny98410wj9pj31jadq0vhhc0h9wx144j3g1j3m4h20f80b7ycn";
+  commit = "640a004270b29f15aef76abff531816626e28e94";
+  diffHash = "1nb31y23sng21mxxll97rbwww1471bvkca73c4rwlv81rfmj0rj6";
   shorthash = lib.strings.substring 0 7 commit;
-  kernelVersion = kernel.version;
+  kernelVersion = if rebaseBroken
+                  then (lib.versions.majorMinor (lib.readFile ../../VERSION)) + ".0"
+                  else kernel.version;
   oldPatches = kernelPatches;
-    in
-(kernel.override (args // {
-  argsOverride = {
-    version = "${kernelVersion}-bcachefs-${version}-${shorthash}";
-    modDirVersion = "${kernelVersion}-bcachefs-${shorthash}";
+  gitVersion = importJSON ./version.json;
+  versionInfo = {
+    version = "${kernelVersion}-bcachefs-${variant}-${shorthash}";
+    modDirVersion = "${kernelVersion}-bcachefs-${variant}-${shorthash}";
     extraMeta.branch = versions.majorMinor kernelVersion;
     extraMeta.broken = broken;
+  };
+  kernel2 = (if rebaseBroken then
+                  buildLinux (args // versionInfo // {
+                    src = fetchgit {inherit (gitVersion) url rev sha256;};
+                  } // (args.argsOverride or {}))
+             else kernel);
+in
+(kernel2.override (args // {
+  argsOverride = versionInfo // (args.argsOverride or { });
 
-  } // (args.argsOverride or { });
-
-  kernelPatches = [{
+  kernelPatches = [({
       name = "bcachefs-${commit}";
-      patch =
-        if useLocalPatch
-          then ../../bcachefs-patches
-          else fetchurl {
-                name = "bcachefs-${commit}.diff";
-                url  = "https://evilpiepirate.org/git/bcachefs.git/rawdiff/?id=${commit}&id2=v${lib.versions.majorMinor kernelVersion}";
-                sha256 = diffHash;
-              };
+      patch = null;
       extraConfig = (''
-        LOCALVERSION -bcachefs-${shorthash}
+        LOCALVERSION -bcachefs-${variant}-${shorthash}
         CRYPTO_CRC32C_INTEL y
         BCACHEFS_FS y
         BCACHEFS_POSIX_ACL y
         BCACHEFS_QUOTA y
-        ALLOC_TAGGING n
-        CODETAG_TIME_STATS n
         PERCPU_STATS n
       '' + (if debug then ''
           BCACHEFS_DEBUG y
@@ -58,5 +60,16 @@ let
           KALLSYMS y
           KALLSYMS_ALL y
       '' else ""));
-  }] ++ oldPatches;
+  } // (if rebaseBroken
+        then {}
+        else {
+        patch =
+          if useLocalPatch
+            then ../../bcachefs-patches
+            else fetchurl {
+                  name = "bcachefs-${commit}.diff";
+                  url  = "https://evilpiepirate.org/git/bcachefs.git/rawdiff/?id=${commit}&id2=v${lib.versions.majorMinor kernelVersion}";
+                  sha256 = diffHash;
+                };
+        })) ] ++ oldPatches;
 }))
