@@ -14,9 +14,11 @@ in
     settings = {
       substituters = [
           "https://yo-nur.cachix.org"
+          "https://cache.garnix.io"
       ];
       trusted-public-keys = [
         "yo-nur.cachix.org-1:E/RHfQMAZ90mPhvsaqo/GrQ3M1xzXf5Ztt0o+1X3+Bs="
+        "cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g="
       ];
     };
   };

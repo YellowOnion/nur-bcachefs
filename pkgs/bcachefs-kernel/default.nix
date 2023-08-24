@@ -15,8 +15,8 @@
 with lib;
 
 let
-  commit = "640a004270b29f15aef76abff531816626e28e94";
-  diffHash = "1nb31y23sng21mxxll97rbwww1471bvkca73c4rwlv81rfmj0rj6";
+  commit = "117cd823d2d77dd8db1ec35b5819e1668c736b31";
+  diffHash = "05a19qkgxpqb05wrclj8kkpm6vhxmlyf7jn1yyfz4xh0q0mz9m9i";
   shorthash = lib.strings.substring 0 7 commit;
   kernelVersion = if rebaseBroken
                   then (lib.versions.majorMinor (lib.readFile ../../VERSION)) + ".0"

@@ -1,9 +1,9 @@
 {
   "url": "https://evilpiepirate.org/git/bcachefs.git",
-  "rev": "640a004270b29f15aef76abff531816626e28e94",
-  "date": "2023-08-05T14:12:06-04:00",
-  "path": "/nix/store/71fz6gwyj6n095vvm824bgjgm90x5vkm-bcachefs",
-  "sha256": "1gk44v66qh9qs6rwrwz6iq9dkj368rzm55kc8lmknxmvh181sfj8",
+  "rev": "117cd823d2d77dd8db1ec35b5819e1668c736b31",
+  "date": "2023-08-23T12:45:48-04:00",
+  "path": "/nix/store/7lby4fbgxd4n20iagw87ian525dasrhn-bcachefs-117cd82",
+  "sha256": "18ybd1ks6sl845xvgq82l31b7dr5619jdhp590c2mg1s3fp06fsx",
   "fetchLFS": false,
   "fetchSubmodules": false,
   "deepClone": false,
