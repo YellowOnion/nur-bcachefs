@@ -53,7 +53,7 @@
               })
               ./iso.nix
             ];
-          }).config.system.build.isoImage.overrideAttrs (self: self // {perferLocalBuilds = true ;});
+          }).config.system.build.isoImage.overrideAttrs (self: self // { perferLocalBuilds = true ;});
         };
       });
 }
